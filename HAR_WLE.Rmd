@@ -24,6 +24,7 @@ Use your prediction model to predict 20 different test cases:
 
 Potential next steps include:
 
+### Analysis 
 ```{r set_global_options}
 rm(list=ls())
 set.seed(12345)
@@ -40,26 +41,15 @@ setwd("~/Documents/Work/Courses/Coursera/jhu-datascience/H-Practical-Machine-Lea
 ### Step 01: import data
 ```{r import_data, cache=TRUE}
 activity_df <- myimport_data(
-    "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+    "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", 
+    print_diagn=FALSE)
 predict_df <- myimport_data(
-    "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+    "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", 
+    print_diagn=FALSE)
 ```
 
 #### Step 02.1: inspect data
 ```{r inspect_data_1, cache=TRUE}
-myprint_str_df <- function(df) {
-    if (ncol(df) <= 20) print(str(df)) else { 
-        print(str(df[, 1:20]))
-	
-		# print 20 middle cols
-		print(str(df[, sort(sample(21:(ncol(df)-20), 20))]))
-
-        print(str(df[, (ncol(df) - 20):ncol(df)]))
-        warning("[list output truncated]")
-    }
-}
-myprint_str_df(activity_df)
-myprint_str_df(predict_df)
 
 # List info gathered for various columns
 # X:            int:    1:20            [record_id]
@@ -67,23 +57,16 @@ myprint_str_df(predict_df)
 # classe:       factor: 5 categories    [prediction variable]
 # problem_id:   int:    1:20            [only in predict_df]
 
-print(summary(activity_df))
+#print(summary(activity_df))
 print(summary(predict_df))
 ```
-Many columns in test dataset (predict_df) have missing data for all records. Let's delete these columns from both training & test datasets to make the analysis easier
+Many columns in test dataset (predict_df) have missing data for all records. Let's delete these columns from both training & test datasets to make the analysis faster & easier.
 
 ```{r inspect_data_2, cache=TRUE}
-myfind_all_na_cols_df <- function(df) {
-    na_cols <- which(as.numeric(colSums(is.na(df))) == nrow(df))
-    return(names(df)[na_cols])
-}
 all_na_cols <- myfind_all_na_cols_df(predict_df)
 print("deleting all na cols:")
 print(all_na_cols)
 
-mydelete_cols_df <- function(df, colnames) {
-    return(subset(df, select=names(df)[!names(df) %in% colnames]))
-}
 predict_cln_df <- mydelete_cols_df(predict_df, all_na_cols)
 print(summary(predict_cln_df))
 
@@ -92,86 +75,6 @@ predict_df <- predict_cln_df
 activity_df <- mydelete_cols_df(activity_df, all_na_cols)
 print(summary(activity_df))
 
-mycompute_median <- function(vector) {
-    if (is.factor(vector)) 
-        return(factor(levels(vector)[median(as.numeric(vector))], levels(vector)))
-    else return(median(vector, na.rm=TRUE))
-}
-myplot_histogram <- function(df, hst_col_name, fill_col_name=NULL, 
-                             show_stats=TRUE, facet_frmla=NULL) {
-    require(ggplot2)
-    
-    if (is.null(fill_col_name)) {
-        # Fill with raw counts
-        p <- ggplot(df, aes_string(x=hst_col_name))
-        p <- p + geom_histogram(aes(fill=..count..)) + 
-                 scale_fill_gradient("Count", low="red", high="blue")           
-    }
-    else {
-        # If fill variable has 7 or less unique values use raw data 
-        if (length(unique(df[, fill_col_name])) <= 7) {
-            
-            # if fill variable is a factor use raw data
-            if (class(df[, fill_col_name]) == "factor") {
-                p <- ggplot(df, aes_string(x=hst_col_name, fill=fill_col_name))
-            } else {
-                # else create a factor of the fill variable    
-                fill_col_fctr_name <- paste0(fill_col_name, "_fctr")
-                df[, fill_col_fctr_name] <- as.factor(df[, fill_col_name])
-                p <- ggplot(df, aes_string(x=hst_col_name, 
-                                           fill=fill_col_fctr_name))
-            }
-        } else {
-            # else fill with 5 groups of the data    
-            fill_col_grp_name <- paste0(fill_col_name, "_grp")
-            df[, fill_col_grp_name] <- cut(df[, fill_col_name], 5) 
-            # Why does cut create labels with -ve values although min is 0 ?
-            
-            p <- ggplot(df, aes_string(x=hst_col_name, fill=fill_col_grp_name))
-        }
-        p <- p + geom_bar()
-    }
-    
-    p <- p + scale_y_continuous(labels=myformat_number)
-    if ((class(df[, hst_col_name]) == "integer") | 
-        (class(df[, hst_col_name]) == "number"))
-        p <- p + scale_x_continuous(labels=myformat_number)
-    
-    if (show_stats) {
-        if (is.numeric(df[, hst_col_name]))
-            p <- p + geom_vline(aes_string(xintercept=mean(df[, hst_col_name], 
-                                                           na.rm=TRUE),
-                                linetype="\"dotted\""), show_guide=TRUE) 
-        p <- p + geom_vline(aes_string(xintercept=mycompute_median(df[, hst_col_name]),
-                                       linetype="\"dashed\""), show_guide=TRUE)         
-    }
-
-    # Add number of missing values as a horizontal line
-    num_na <- sum(is.na(df[, hst_col_name]))
-    if (num_na > 0) 
-        p <- p + geom_hline(aes_string(yintercept=num_na,
-                                       linetype="\"dotdash\""), show_guide=TRUE)  
-    
-    #if ((class(facet_frmla) == "formula") | (!is.na(facet_frmla)))
-    if (!missing(facet_frmla))
-        p <- p + facet_grid(facet_frmla)
-    
-    if (show_stats) {
-        # Display stats legend
-        stats_legend_labels <- c("median")
-        if (is.numeric(df[, hst_col_name]))
-            stats_legend_labels <- c(stats_legend_labels, "mean")
-        if (num_na > 0)
-            stats_legend_labels <- c(stats_legend_labels, "missing")
-        
-        p <- p + scale_linetype_identity(guide="legend", name="Stats", 
-                                         labels=stats_legend_labels)
-        # Lines legend messes up the fill legend
-        p <- p + guides(fill=guide_legend(override.aes=list(linetype=0)))        
-    }
-    
-    return(p)
-}
 # print(myplot_histogram(activity_df[sample(1:nrow(activity_df), 20), ], "classe", 
 #                        fill_col_name="user_name"))
 # print(myplot_histogram(activity_df[sample(1:nrow(activity_df), 20), ], "classe", 
@@ -184,14 +87,14 @@ print(myplot_histogram(predict_df, "user_name", show_stats=FALSE))
 # Create new features that help diagnostics
 ```
 
-Null Hypothesis ($\sf{H_{0}}$): mpg is not impacted by am_fctr.  
-The variance by am_fctr appears to be independent. 
+# Null Hypothesis ($\sf{H_{0}}$): mpg is not impacted by am_fctr.  
+# The variance by am_fctr appears to be independent. 
 ```{r q1, cache=TRUE}
-print(t.test(subset(cars_df, am_fctr == "automatic")$mpg, 
-             subset(cars_df, am_fctr == "manual")$mpg, 
-             var.equal=FALSE)$conf)
+#print(t.test(subset(cars_df, am_fctr == "automatic")$mpg, 
+#             subset(cars_df, am_fctr == "manual")$mpg, 
+#             var.equal=FALSE)$conf)
 ```
-We reject the null hypothesis i.e. we have evidence to conclude that am_fctr impacts mpg (95% confidence). Manual transmission is better for miles per gallon versus automatic transmission.
+#We reject the null hypothesis i.e. we have evidence to conclude that am_fctr impacts mpg ##(95% confidence). Manual transmission is better for miles per gallon versus automatic #transmission.
 
 ```{r print_sessionInfo, echo=FALSE}
 sessionInfo()
