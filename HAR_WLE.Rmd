@@ -1,0 +1,111 @@
+---
+# Get YAML keywords from myYAML_ref.Rmd
+title: "Human Activity Recognition (HAR): Weight Lifting Exercises (WLE) Classification"
+author: "bdanalytics"
+#output: html_document
+---
+#### Date: `r format(Sys.time(), "(%a) %b %d, %Y")`
+
+Data: Measurement of exercises performed by six male participants aged between 20-28 years, with little weight lifting experience using a light dumbbell (1.25kg)  
+Source: http://groupware.les.inf.puc-rio.br/har  
+Time period: 
+
+### Synopsis:
+
+How you built your model:
+
+How you used cross validation:
+
+What you think the expected out of sample error is:
+
+Why you made the choices you did:
+
+Use your prediction model to predict 20 different test cases:
+
+Potential next steps include:
+
+```{r set_global_options}
+rm(list=ls())
+set.seed(12345)
+source("~/Dropbox/datascience/R/mydsutils.R")
+source("~/Dropbox/datascience/R/myplot.R")
+# Gather all package requirements here
+#suppressPackageStartupMessages(require())
+```
+
+```{r set_global_options_wd, echo=FALSE}
+setwd("~/Documents/Work/Courses/Coursera/jhu-datascience/H-Practical-Machine-Learning/Project/HAR-WLE")
+```
+
+### Step 01: import data
+```{r import_data, cache=TRUE}
+activity_df <- myimport_data(
+    "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+predict_df <- myimport_data(
+    "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+```
+
+#### Step 02.1: inspect data
+```{r inspect_data_1, cache=TRUE}
+myprint_str_df <- function(df) {
+    if (ncol(df) <= 20) print(str(df)) else { 
+        print(str(df[, 1:20]))
+	
+		# print 20 middle cols
+		print(str(df[, sort(sample(21:(ncol(df)-20), 20))]))
+
+        print(str(df[, (ncol(df) - 20):ncol(df)]))
+        warning("[list output truncated]")
+    }
+}
+myprint_str_df(activity_df)
+myprint_str_df(predict_df)
+
+# List info gathered for various columns
+# X:            int:    1:20            [record_id]
+# user_name:    factor: 6 subject names
+# classe:       factor: 5 categories    [prediction variable]
+# problem_id:   int:    1:20            [only in predict_df]
+
+print(summary(activity_df))
+print(summary(predict_df))
+```
+Many columns in test dataset (predict_df) have missing data for all records. Let's delete these columns from both training & test datasets to make the analysis easier
+
+```{r inspect_data_2, cache=TRUE}
+myfind_all_na_cols_df <- function(df) {
+    na_cols <- which(as.numeric(colSums(is.na(df))) == nrow(df))
+    return(names(df)[na_cols])
+}
+all_na_cols <- myfind_all_na_cols_df(predict_df)
+print("deleting all na cols:")
+print(all_na_cols)
+
+mydelete_cols_df <- function(df, colnames) {
+    return(subset(df, select=names(df)[!names(df) %in% colnames]))
+}
+predict_cln_df <- mydelete_cols_df(predict_df, all_na_cols)
+print(summary(predict_cln_df))
+
+# get rid of the original datasets to save memory
+predict_df <- predict_cln_df
+activity_df <- mydelete_cols_df(activity_df, all_na_cols)
+print(summary(activity_df))
+
+pairs(subset(entity_df, select=-c(col_symbol)))
+
+# Create new features that help diagnostics
+```
+
+Null Hypothesis ($\sf{H_{0}}$): mpg is not impacted by am_fctr.  
+The variance by am_fctr appears to be independent. 
+```{r q1, cache=TRUE}
+print(t.test(subset(cars_df, am_fctr == "automatic")$mpg, 
+             subset(cars_df, am_fctr == "manual")$mpg, 
+             var.equal=FALSE)$conf)
+```
+We reject the null hypothesis i.e. we have evidence to conclude that am_fctr impacts mpg (95% confidence). Manual transmission is better for miles per gallon versus automatic transmission.
+
+```{r print_sessionInfo, echo=FALSE}
+sessionInfo()
+```
