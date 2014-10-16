@@ -31,7 +31,7 @@ set.seed(12345)
 source("~/Dropbox/datascience/R/mydsutils.R")
 source("~/Dropbox/datascience/R/myplot.R")
 # Gather all package requirements here
-#suppressPackageStartupMessages(require())
+suppressPackageStartupMessages(require(caret))
 ```
 
 ```{r set_global_options_wd, echo=FALSE}
@@ -40,7 +40,7 @@ setwd("~/Documents/Work/Courses/Coursera/jhu-datascience/H-Practical-Machine-Lea
 
 ### Step 01: import data
 ```{r import_data, cache=TRUE}
-activity_df <- myimport_data(
+entity_df <- myimport_data(
     "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", 
     print_diagn=FALSE)
 predict_df <- myimport_data(
@@ -50,6 +50,8 @@ predict_df <- myimport_data(
 
 #### Step 02.1: inspect data
 ```{r inspect_data_1, cache=TRUE}
+#print(str(entity_df))
+#print(str(predict_df))
 
 # List info gathered for various columns
 # X:                    int:    1:20            [record_id]
@@ -65,7 +67,7 @@ predict_df <- myimport_data(
 # classe:               factor: 5 categories    [prediction variable]
 # problem_id:           int:    1:20            [only in predict_df]
 
-#print(summary(activity_df))
+#print(summary(entity_df))
 print(summary(predict_df))
 ```
 Many columns in test dataset (predict_df) have missing data for all records. Let's delete these columns from both training & test datasets to make the analysis faster & easier.
@@ -80,21 +82,21 @@ print(summary(predict_cln_df))
 
 # get rid of the original datasets to save memory
 predict_df <- predict_cln_df
-activity_df <- mydelete_cols_df(activity_df, all_na_cols)
-print(summary(activity_df))
+entity_df <- mydelete_cols_df(entity_df, all_na_cols)
+print(summary(entity_df))
 
-# print(myplot_histogram(activity_df[sample(1:nrow(activity_df), 20), ], "classe", 
+# print(myplot_histogram(entity_df[sample(1:nrow(entity_df), 20), ], "classe", 
 #                        fill_col_name="user_name"))
-# print(myplot_histogram(activity_df[sample(1:nrow(activity_df), 20), ], "classe", 
+# print(myplot_histogram(entity_df[sample(1:nrow(entity_df), 20), ], "classe", 
 #                        fill_col_name="user_name", show_stats=FALSE))
-print(myplot_histogram(activity_df, "classe", fill_col_name="user_name"))
+print(myplot_histogram(entity_df, "classe", fill_col_name="user_name"))
 print(myplot_histogram(predict_df, "user_name", show_stats=FALSE))
 
 # print(myplot_scatter(predict_df, "new_window", "num_window", 
 #                      colorcol_name="user_name"))
-# print(myplot_scatter(activity_df, "new_window", "num_window", 
+# print(myplot_scatter(entity_df, "new_window", "num_window", 
 #                      colorcol_name="user_name"))
-# print(myplot_scatter(activity_df, "new_window", "num_window", 
+# print(myplot_scatter(entity_df, "new_window", "num_window", 
 #                      colorcol_name="classe"))
 #pairs(subset(entity_df, select=-c(col_symbol)))
 
@@ -108,44 +110,104 @@ print(myplot_histogram(predict_df, "user_name", show_stats=FALSE))
 features_lst <- names(predict_df)
 features_lst <- features_lst[!(features_lst %in% 
                                 c("X", "user_name", "problem_id"))]
-# remove nearZeroVar features (not much variance)
+## remove nearZeroVar features (not much variance)
+#require(reshape)
+#var_features_df <- melt(summaryBy(. ~ factor(0), data=entity_df[, features_lst], 
+#                             FUN=var, keep.names=TRUE), 
+#                             variable_name=c("feature"))
+#names(var_features_df)[2] <- "var"
+#print(var_features_df[order(var_features_df$var), ])
+# summaryBy ignores factors whereas nearZeroVar inspects factors
+print(nearZeroVar(entity_df[, features_lst], saveMetrics=TRUE))
+nearZeroVars <- features_lst[nearZeroVar(entity_df[, features_lst])]
+#print(var(entity_df[, nearZeroVars]))
+#print(var(entity_df[, features_lst]))
+print(summary(entity_df[, nearZeroVars]))
+print(summary(predict_df[, nearZeroVars]))
+
+features_lst <- features_lst[!(features_lst %in% nearZeroVars)]
 ```
 
 Let's add a random variable (my.rnorm) as a feature since some models (e.g. random forests) need a random varaible & any model that categorizes this feature as significant would be suspect.  
 ```{r extract_features_4, cache=TRUE}
 predict_df$my.rnorm <- rnorm(nrow(predict_df))
-activity_df$my.rnorm <- rnorm(nrow(activity_df))
+entity_df$my.rnorm <- rnorm(nrow(entity_df))
 features_lst <- c(features_lst, "my.rnorm")
 ```
 
 ### Step 04: build training, validation & test datasets
 ```{r build_datasets_2, cache=TRUE}
-table(activity_df$classe,activity_df$user_name)
-k_fold <- 5
-activity_df[order(activity_df$classe, 
-                  activity_df$user_name, 
-                  activity_df$my.rnorm),"my.cv_ix"] <- 
-    rep(1:k_fold, length.out=nrow(activity_df))
-summaryBy(X ~ my.cv_ix, data=activity_df, FUN=length)
-tapply(activity_df$X, list(activity_df$classe, activity_df$user_name, 
-                           activity_df$my.cv_ix), length)
+print(table(entity_df$classe, entity_df$user_name))
+# k_fold <- 5
+# entity_df[order(entity_df$classe, 
+#                   entity_df$user_name, 
+#                   entity_df$my.rnorm),"my.cv_ix"] <- 
+#     rep(1:k_fold, length.out=nrow(entity_df))
+# summaryBy(X ~ my.cv_ix, data=entity_df, FUN=length)
+# tapply(entity_df$X, list(entity_df$classe, entity_df$user_name, 
+#                            entity_df$my.cv_ix), length)
 
 #require(DAAG)
-#activity_df$classe.proper <- as.numeric(activity_df$classe == "A")
-#rnorm.glm <- glm(classe.proper ~ rnorm, family=binomial, data=activity_df)
+#entity_df$classe.proper <- as.numeric(entity_df$classe == "A")
+#rnorm.glm <- glm(classe.proper ~ rnorm, family=binomial, data=entity_df)
 #cv.binary(rnorm.glm, nfolds=k_fold, print.details=TRUE)
-#result <- cv.lm(df=activity_df, form.lm=formula(classe ~ rnorm), 
+#result <- cv.lm(df=entity_df, form.lm=formula(classe ~ rnorm), 
 #                    m=k_fold, seed=12345, printit=TRUE)
+
+inTrain <- createDataPartition(y=entity_df$classe, p=0.8, list=FALSE)
+train_df <- entity_df[inTrain, c(features_lst, "classe", "user_name")]
+test_df <- entity_df[-inTrain, c(features_lst, "classe", "user_name")]
+print(table(train_df$classe, train_df$user_name))
+print(table(test_df$classe, test_df$user_name))
 ```
 
-# Null Hypothesis ($\sf{H_{0}}$): mpg is not impacted by am_fctr.  
-# The variance by am_fctr appears to be independent. 
-```{r q1, cache=TRUE}
-#print(t.test(subset(cars_df, am_fctr == "automatic")$mpg, 
-#             subset(cars_df, am_fctr == "manual")$mpg, 
-#             var.equal=FALSE)$conf)
+### Step 07: design models
+```{r design_models_1, cache=TRUE}
+mdl_sst_formula <- reformulate(features_lst[1:10], "classe")
+print(mdl_sst_formula)
+train_sst_df <- train_df[createDataPartition(y=train_df$classe, p=0.1, list=FALSE), ]
+print(table(train_sst_df$classe, train_sst_df$user_name))
+print(head(train_sst_df))
+a_benchmark_trg_sst_mdl <- train(mdl_sst_formula, data=train_sst_df, 
+                                 preProcess=c("center", "scale"), 
+                                 method="rf")
+test_df[, paste0("classe.predict.", "a_benchmark_trg_sst_mdl")] <-
+            predict(a_benchmark_trg_sst_mdl, test_df)
+print(confusionMatrix(test_df[, "classe"], 
+                      test_df[, paste0("classe.predict.", 
+                                       "a_benchmark_trg_sst_mdl")]))
 ```
-#We reject the null hypothesis i.e. we have evidence to conclude that am_fctr impacts mpg ##(95% confidence). Manual transmission is better for miles per gallon versus automatic #transmission.
+
+### Step 11: predict results for new data
+```{r predict_newdata_1, cache=TRUE}
+predict_df[, paste0("classe.predict.", "a_benchmark_trg_sst_mdl")] <-
+             predict(a_benchmark_trg_sst_mdl, predict_df)
+print(predict_df[, c("X", "user_name", 
+                     paste0("classe.predict.", "a_benchmark_trg_sst_mdl"))])
+```
+
+### Step 12: export prediction for new data
+```{r export_prediction_1, cache=TRUE}
+export_pml_files <- function(x, dir_name) {
+
+    if (!file.exists(paste0("./export"))) dir.create("export")
+    if (!file.exists(paste0("./export/", dir_name))) 
+        dir.create(paste0("./export/", dir_name))
+    
+    for (i in 1:length(x)) {
+        filename <- paste0("./export/", dir_name, "/problem_id_", i, ".txt")
+        write.table(x[i], file=filename, quote=FALSE, 
+                    row.names=FALSE, col.names=FALSE)
+    }
+}
+export_pml_files(predict_df[, paste0("classe.predict.", 
+                                     "a_benchmark_trg_sst_mdl")], 
+                 "a_benchmark_trg_sst_mdl")
+```
+
+### Step ##: build training, validation & test datasets
+```{r build_datasets_1, cache=TRUE}
+```
 
 ```{r print_sessionInfo, echo=FALSE}
 sessionInfo()
