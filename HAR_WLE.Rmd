@@ -52,10 +52,18 @@ predict_df <- myimport_data(
 ```{r inspect_data_1, cache=TRUE}
 
 # List info gathered for various columns
-# X:            int:    1:20            [record_id]
-# user_name:    factor: 6 subject names
-# classe:       factor: 5 categories    [prediction variable]
-# problem_id:   int:    1:20            [only in predict_df]
+# X:                    int:    1:20            [record_id]
+# user_name:            factor: 6 subject names
+
+# raw_timestamp_part_1: int:                    [excluded for modeling ?]
+# raw_timestamp_part_2: int:                    [excluded for modeling ?]
+# cvtd_timestamp:       int:                    [excluded for modeling ?]
+
+# new_window:           factor: no; yes         [only no in predict_df]
+# num_window:           int:    1:19622         [excluded for modeling ?]
+
+# classe:               factor: 5 categories    [prediction variable]
+# problem_id:           int:    1:20            [only in predict_df]
 
 #print(summary(activity_df))
 print(summary(predict_df))
@@ -82,9 +90,52 @@ print(summary(activity_df))
 print(myplot_histogram(activity_df, "classe", fill_col_name="user_name"))
 print(myplot_histogram(predict_df, "user_name", show_stats=FALSE))
 
+# print(myplot_scatter(predict_df, "new_window", "num_window", 
+#                      colorcol_name="user_name"))
+# print(myplot_scatter(activity_df, "new_window", "num_window", 
+#                      colorcol_name="user_name"))
+# print(myplot_scatter(activity_df, "new_window", "num_window", 
+#                      colorcol_name="classe"))
 #pairs(subset(entity_df, select=-c(col_symbol)))
 
 # Create new features that help diagnostics
+#   Convert factors to dummy variables
+#   Build splines   require(splines); bsBasis <- bs(training$age, df=3)
+```
+
+### Step 03: extract features
+```{r extract_features_2, cache=TRUE}
+features_lst <- names(predict_df)
+features_lst <- features_lst[!(features_lst %in% 
+                                c("X", "user_name", "problem_id"))]
+# remove nearZeroVar features (not much variance)
+```
+
+Let's add a random variable (my.rnorm) as a feature since some models (e.g. random forests) need a random varaible & any model that categorizes this feature as significant would be suspect.  
+```{r extract_features_4, cache=TRUE}
+predict_df$my.rnorm <- rnorm(nrow(predict_df))
+activity_df$my.rnorm <- rnorm(nrow(activity_df))
+features_lst <- c(features_lst, "my.rnorm")
+```
+
+### Step 04: build training, validation & test datasets
+```{r build_datasets_2, cache=TRUE}
+table(activity_df$classe,activity_df$user_name)
+k_fold <- 5
+activity_df[order(activity_df$classe, 
+                  activity_df$user_name, 
+                  activity_df$my.rnorm),"my.cv_ix"] <- 
+    rep(1:k_fold, length.out=nrow(activity_df))
+summaryBy(X ~ my.cv_ix, data=activity_df, FUN=length)
+tapply(activity_df$X, list(activity_df$classe, activity_df$user_name, 
+                           activity_df$my.cv_ix), length)
+
+#require(DAAG)
+#activity_df$classe.proper <- as.numeric(activity_df$classe == "A")
+#rnorm.glm <- glm(classe.proper ~ rnorm, family=binomial, data=activity_df)
+#cv.binary(rnorm.glm, nfolds=k_fold, print.details=TRUE)
+#result <- cv.lm(df=activity_df, form.lm=formula(classe ~ rnorm), 
+#                    m=k_fold, seed=12345, printit=TRUE)
 ```
 
 # Null Hypothesis ($\sf{H_{0}}$): mpg is not impacted by am_fctr.  
