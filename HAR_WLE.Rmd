@@ -163,14 +163,49 @@ print(table(test_df$classe, test_df$user_name))
 
 ### Step 07: design models
 ```{r design_models_1, cache=TRUE}
-mdl_sst_formula <- reformulate(features_lst[1:10], "classe")
-print(mdl_sst_formula)
-train_sst_df <- train_df[createDataPartition(y=train_df$classe, p=0.1, list=FALSE), ]
-print(table(train_sst_df$classe, train_sst_df$user_name))
-print(head(train_sst_df))
-a_benchmark_trg_sst_mdl <- train(mdl_sst_formula, data=train_sst_df, 
-                                 preProcess=c("center", "scale"), 
-                                 method="rf")
+
+num_feats <- 2
+p_obs <- 0.01
+preProcess <- c("center", "scale")
+sampling_method <- "boot"
+
+fit_time_df <- data.frame()
+for (num_feats in seq(4, 4, 2)) {
+    print(sprintf("num_feats:%d", num_feats))
+    mdl_sst_formula <- reformulate(features_lst[1:num_feats], "classe")
+    train_sst_df <- train_df[createDataPartition(y=train_df$classe, p=p_obs, 
+                                                 list=FALSE), ]
+    ctrl <- trainControl(method=sampling_method
+                         #, repeats = 5
+                         #, seeds = seeds
+                         )
+    mdl <- train(mdl_sst_formula, data=train_sst_df, 
+                                           preProcess=preProcess, 
+                                           method="rf"
+                 , trControl = ctrl
+                 )
+    #print(mdl)
+    #fit_time_df <- data.frame()
+    
+    fit_time_df <- rbind(fit_time_df, 
+                         data.frame(num_feats=num_feats,
+                                    p_obs=p_obs,
+                                    preProcess=paste(preProcess, collapse=";"),
+                                    sampling_method=sampling_method,
+                                    n_resample=nrow(mdl$resample),
+                                    mtry=mdl$results[nrow(mdl$results), "mtry"],
+                                    accuracy=mdl$results[nrow(mdl$results), "Accuracy"],
+                                    elapsed=mdl$times$everything["elapsed"]))
+}
+print(fit_time_df)
+
+#print(mdl_sst_formula)
+#print(table(train_sst_df$classe, train_sst_df$user_name))
+#print(head(train_sst_df))
+# a_benchmark_trg_sst_mdl <- train(mdl_sst_formula, data=train_sst_df, 
+#                                  preProcess=c("center", "scale"), 
+#                                  method="rf")
+
 test_df[, paste0("classe.predict.", "a_benchmark_trg_sst_mdl")] <-
             predict(a_benchmark_trg_sst_mdl, test_df)
 print(confusionMatrix(test_df[, "classe"], 
