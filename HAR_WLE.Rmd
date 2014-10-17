@@ -157,7 +157,12 @@ print(table(entity_df$classe, entity_df$user_name))
 inTrain <- createDataPartition(y=entity_df$classe, p=0.8, list=FALSE)
 train_df <- entity_df[inTrain, c(features_lst, "classe", "user_name")]
 test_df <- entity_df[-inTrain, c(features_lst, "classe", "user_name")]
+
+inValidate <- createDataPartition(y=train_df$classe, p=0.8, list=FALSE)
+train_df <- train_df[inValidate, c(features_lst, "classe", "user_name")]
+validate_df <- train_df[-inValidate, c(features_lst, "classe", "user_name")]
 print(table(train_df$classe, train_df$user_name))
+print(table(validate_df$classe, validate_df$user_name))
 print(table(test_df$classe, test_df$user_name))
 ```
 
@@ -194,7 +199,8 @@ for (num_feats in seq(4, 4, 2)) {
                                     sampling_method=sampling_method,
                                     n_resample=nrow(mdl$resample),
                                     mtry=mdl$results[nrow(mdl$results), "mtry"],
-                                    accuracy=mdl$results[nrow(mdl$results), "Accuracy"],
+                                    #accuracy=mdl$results[nrow(mdl$results), "Accuracy"],
+                                    accuracy=mdl$results[nrow(mdl$results), "Accuracy"],                                    
                                     elapsed=mdl$times$everything["elapsed"]))
 }
 print(fit_time_df)
