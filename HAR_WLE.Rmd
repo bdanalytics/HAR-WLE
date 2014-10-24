@@ -46,6 +46,12 @@ Brief summary of the prediciton results on new data:
 #### Potential next steps include:
 
 1. Plot the final model
+2. Merge variable importance data for key models into feats_df & plot improtance vs. correlation ?
+2. Plot response variable & prediction results against top 2 correlated features for:
+    2.1 The selected "base" model
+    2.2 The "train_all" model
+    2.3 The "train_validate_all" model
+    2.4 The "train_validate_test_all" model
 2. Compress analysis report (please feel free to stop here if you feel that the entire report is too detailed)
 3. Peform PCA pre-processing and select "key" features to make the model more interpretable 
 4. Evaluate other classification algorithms (e.g. SVMs, kNN, etc.) 
@@ -59,6 +65,7 @@ source("~/Dropbox/datascience/R/myplot.R")
 # Gather all package requirements here
 suppressPackageStartupMessages(require(caret))
 suppressPackageStartupMessages(require(plyr))
+suppressPackageStartupMessages(require(reshape2))
 ```
 
 ```{r set_global_options_wd, echo=FALSE}
@@ -138,6 +145,8 @@ features_lst <- features_lst[!(features_lst %in%
 
 feats_df <- nearZeroVar(entity_df[, features_lst], saveMetrics=TRUE)
 feats_df$feature <- rownames(feats_df)
+# used later for plots
+feats_df$percentUniqueCut_fctr <- cut(feats_df$percentUnique, breaks=5)
 print(subset(feats_df, nzv == TRUE))
 nearZeroVars <- subset(feats_df, nzv == TRUE)$feature
 print(summary(entity_df[, nearZeroVars]))
@@ -180,7 +189,7 @@ script_df <- rbind(script_df,
 ```
 
 #### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: select features
-```{r design_models_1, cache=TRUE}
+```{r select_features, cache=TRUE}
 # Compute feature correlations with response to prioritize feature selection for model design
 feats_cor_df <- data.frame( response.cor=cor(train_df[, feats_df$feature], 
                             unclass(train_df[, response_varname])))
@@ -211,7 +220,7 @@ script_df <- rbind(script_df,
 ```{r design_models, cache=TRUE}
 
 # Create a function to fit a model based on different tuning parameters which will be used to optimize fit elapsed time vs. validation data prediction accuracy
-mytrain_model <- function(par_row, trg_df=train_df) {
+mytrain_model <- function(par_row, fit_df=train_df) {
     #print(sprintf("num_feats: %d", num_feats))
     #print(sprintf("p_obs: %f", par_row$p_obs))
     
@@ -219,7 +228,7 @@ mytrain_model <- function(par_row, trg_df=train_df) {
     set.seed(12345)
     
     mdl_frmla <- reformulate(feats_df$feature[1:par_row$num_feats], response_varname)
-    train_sst_df <- train_df[createDataPartition(y=train_df[, response_varname], 
+    train_sst_df <- fit_df[createDataPartition(y=fit_df[, response_varname], 
                                                  p=par_row$p_obs, list=FALSE), 
                              c(response_varname, feats_df$feature[1:par_row$num_feats])]
     ctrl <- trainControl(method=par_row$sampling_method
@@ -229,7 +238,9 @@ mytrain_model <- function(par_row, trg_df=train_df) {
                         )
     
     # mtry is a tuning parameter for random forests
-    tune_grid <- expand.grid(mtry=par_row$mtry)
+    if (par_row$mtry > -1) tune_grid <- expand.grid(mtry=par_row$mtry)
+    else tune_grid <- NULL;
+    
     mdl <- train(mdl_frmla, data=train_sst_df, 
                 preProcess=eval(parse(text=par_row$preProcess)),
                 method="rf", tuneGrid=tune_grid
@@ -315,7 +326,21 @@ sel_mdl <- mdl_1
 print(sel_mdl)
 print(confusionMatrix(validate_df[, response_varname], 
                       predict(sel_mdl, newdata=validate_df)))
-print(varImp(sel_mdl))
+#print(varImp(sel_mdl))
+mymerge_varimp <- function(feats_df, mdl, mdl_name) {
+    varimp_df <- varImp(mdl)$importance
+    varimp_varname <- c(paste0(mdl_name, ".Importance"))
+    names(varimp_df) <- varimp_varname
+    varimp_df$feature <- rownames(varimp_df)
+    intersect(names(varimp_df), names(feats_df))
+    
+    feats_df <- merge(feats_df, varimp_df, all.x=TRUE)
+    print(ggplot(feats_df, aes_string(x="response.cor", y=varimp_varname)) +
+            geom_point(aes(size=freqRatio, shape=percentUniqueCut_fctr), color="grey") +   
+            geom_text(aes(label=feature), size=3.5, color="blue"))
+    return(feats_df)
+}
+feats_df <- mymerge_varimp(feats_df, sel_mdl, "sel_mdl")
 
 script_df <- rbind(script_df, 
                    data.frame(chunk_label="fit_all_train", 
@@ -325,43 +350,68 @@ script_df <- rbind(script_df,
 #### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: fit all training obs
 ```{r fit_all_train_validate, cache=TRUE}
 par_row <- par_grid[1, ]; par_row$mdl_name <- 'train_all'; par_row$p_obs <- 1.0; 
+#par_row$mtry <- -1  # allow caret to optimize
 print(par_row)
 
-attach(mytrain_model(par_row, trg_df=rbind(train_df, validate_df)))
+attach(mytrain_model(par_row, fit_df=rbind(train_df, validate_df)))
 train_all_mdl <- fit_mdl; 
-print(head(predict(train_all_mdl, newdata=validate_df)))
 print(train_all_mdl)
-print(varImp(train_all_mdl))
-train_all_models_df <- fit_df
-print(train_all_models_df)
+print(confusionMatrix(test_df[, response_varname], 
+                      predict(train_all_mdl, newdata=test_df)))
+#print(varImp(train_all_mdl))
+feats_df <- mymerge_varimp(feats_df, train_all_mdl, "train_all_mdl")
 
-```
-### Step ??: fit model for all training & validation data
-#```{r fit_model_train_validate, cache=TRUE}
-par_grid <- data.frame(mdl_name='train_validate_all', num_feats=nrow(feats_df) / 2, p_obs=1.00, preProcess='NULL', 
-                        sampling_method="cv", n_resample=10, mtry=3, stringsAsFactors=FALSE)
-print(par_grid)
-
-attach(train_model(par_grid[1, ]))
-train_validate_all_mdl <- fit_mdl; 
-print(head(predict(train_validate_all_mdl, newdata=test_df)))
-print(train_validate_all_mdl)
-print(varImp(train_validate_all_mdl))
-train_validate_all_models_df <- fit_df)
-print(train_validate_all_models_df)
-
+script_df <- rbind(script_df, 
+                   data.frame(chunk_label="fit_all_obs", 
+                              chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
 ```
 
-### Step 11: predict results for new data
-#```{r predict_newdata_1, cache=TRUE}
-predict_df[, paste0("classe.predict.", "a_benchmark_trg_sst_mdl")] <-
-             predict(a_benchmark_trg_sst_mdl, predict_df)
-print(predict_df[, c("X", "user_name", 
-                     paste0("classe.predict.", "a_benchmark_trg_sst_mdl"))])
+The prediction accuracy has marginally increased from `0.9451` (sampled training data fit predicted on validation data) to `0.9837` (all training & validation data fit predicted on testing {holdout sample} data). There's some minor re-ordering of variable importances (e.g. magnet_dumbbell_x moves higher than pitch_forearm).
+
+#### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: fit all obs
+```{r fit_all_train_validate_test, cache=TRUE}
+par_row <- par_grid[1, ]; par_row$mdl_name <- 'entity_all'; par_row$p_obs <- 1.0; 
+print(par_row)
+
+attach(mytrain_model(par_row, fit_df=entity_df))
+entity_all_mdl <- fit_mdl; 
+print(entity_all_mdl)
+#print(confusionMatrix(test_df[, response_varname], 
+#                      predict(train_all_mdl, newdata=test_df)))
+feats_df <- mymerge_varimp(feats_df, entity_all_mdl, "entity_all_mdl")
+
+feats_tmp_df <- orderBy(~ - response.cor.abs + entity_all_mdl.Importance, 
+                         data=feats_df)
+feats_plot_df <- melt(feats_tmp_df, measure.vars=grep(".Importance", names(feats_df), value=TRUE))
+feats_plot_df$variable_fctr <- factor(feats_plot_df$variable, 
+                                      levels=c("sel_mdl.Importance",
+                                               "train_all_mdl.Importance",
+                                               "entity_all_mdl.Importance"))
+feats_plot_df <- mutate(feats_plot_df, 
+                        feature_tmp = ifelse((variable == "sel_mdl.Importance"), feature, ""))
+print(ggplot(feats_plot_df, aes(x=response.cor, y=value, group=feature)) +
+          geom_point(aes(size=freqRatio, shape=percentUniqueCut_fctr), color="grey") + 
+          geom_line(aes(color=variable_fctr)) + 
+          geom_text(aes(label=feature_tmp), color="slategrey", size=3.5))
+
+script_df <- rbind(script_df, 
+                   data.frame(chunk_label="predict_newdata", 
+                              chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
 ```
 
-### Step 12: export prediction for new data
-#```{r export_prediction_1, cache=TRUE}
+#### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: predict_newdata
+```{r predict_newdata, cache=TRUE}
+response_predict_varname <- paste0(response_varname, ".predict.", "entity_all_mdl")
+predict_df[, response_predict_varname] <- predict(entity_all_mdl, predict_df)
+print(predict_df[, c("X", "user_name", response_predict_varname)])
+
+script_df <- rbind(script_df, 
+                   data.frame(chunk_label="export_predictions", 
+                              chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
+```
+
+#### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: predict_newdata
+```{r export_prediction, cache=TRUE}
 export_pml_files <- function(x, dir_name) {
 
     if (!file.exists(paste0("./export"))) dir.create("export")
@@ -374,13 +424,7 @@ export_pml_files <- function(x, dir_name) {
                     row.names=FALSE, col.names=FALSE)
     }
 }
-export_pml_files(predict_df[, paste0("classe.predict.", 
-                                     "a_benchmark_trg_sst_mdl")], 
-                 "a_benchmark_trg_sst_mdl")
-```
-
-### Step ##: build training, validation & test datasets
-#```{r build_datasets_1, cache=TRUE}
+#export_pml_files(predict_df[, response_predict_varname], "entity_all_mdl")
 ```
 
 ```{r print_sessionInfo, echo=FALSE}
