@@ -57,9 +57,9 @@ predict_df <- myimport_data(
 # X:                    int:    1:20            [record_id]
 # user_name:            factor: 6 subject names
 
-# raw_timestamp_part_1: int:                    [excluded for modeling ?]
-# raw_timestamp_part_2: int:                    [excluded for modeling ?]
-# cvtd_timestamp:       int:                    [excluded for modeling ?]
+# raw_timestamp_part_1: int:                    [excluded for modeling]
+# raw_timestamp_part_2: int:                    [excluded for modeling]
+# cvtd_timestamp:       factor:                 [excluded for modeling]
 
 # new_window:           factor: no; yes         [only no in predict_df]
 # num_window:           int:    1:19622         [excluded for modeling ?]
@@ -69,6 +69,7 @@ predict_df <- myimport_data(
 
 #print(summary(entity_df))
 print(summary(predict_df))
+response_varname <- "classe"
 ```
 Many columns in test dataset (predict_df) have missing data for all records. Let's delete these columns from both training & test datasets to make the analysis faster & easier.
 
@@ -108,8 +109,12 @@ print(myplot_histogram(predict_df, "user_name", show_stats=FALSE))
 ### Step 03: extract features
 ```{r extract_features_2, cache=TRUE}
 features_lst <- names(predict_df)
+
+# Remove features that are not relevant for modeling
 features_lst <- features_lst[!(features_lst %in% 
                                 c("X", "user_name", "problem_id"))]
+features_lst <- features_lst[!(features_lst %in% 
+                                grep("timestamp", features_lst, value=TRUE))]
 ## remove nearZeroVar features (not much variance)
 #require(reshape)
 #var_features_df <- melt(summaryBy(. ~ factor(0), data=entity_df[, features_lst], 
@@ -130,6 +135,7 @@ features_lst <- features_lst[!(features_lst %in% nearZeroVars)]
 
 Let's add a random variable (my.rnorm) as a feature since some models (e.g. random forests) need a random varaible & any model that categorizes this feature as significant would be suspect.  
 ```{r extract_features_4, cache=TRUE}
+random_varname <- "my.rnorm"
 predict_df$my.rnorm <- rnorm(nrow(predict_df))
 entity_df$my.rnorm <- rnorm(nrow(entity_df))
 features_lst <- c(features_lst, "my.rnorm")
@@ -168,42 +174,232 @@ print(table(test_df$classe, test_df$user_name))
 
 ### Step 07: design models
 ```{r design_models_1, cache=TRUE}
+# retList <- structure(NA,class="result")
+# "[<-.result" <- function(x,...,value) {
+#    args <- as.list(match.call())
+#    args <- args[-c(1:2,length(args))]
+#    length(value) <- length(args)
+#    for(i in seq(along=args)) {
+#      a <- args[[i]]
+#      if(!missing(a)) eval.parent(substitute(a <- v,list(a=a,v=value[[i]])))
+#    }
+#    x
+# }
+# 
+# train_model_old <- function(num_feats, p_obs, preProcess, sampling_method, n_resample, mtry) {
+#     print(sprintf("num_feats:%d", num_feats))
+#     mdl_frmla <- reformulate(features_lst[1:num_feats], "classe")
+#     train_sst_df <- train_df[createDataPartition(y=train_df$classe, p=p_obs, 
+#                                                  list=FALSE), 
+#                              c("classe", features_lst[1:num_feats])]
+#     ctrl <- trainControl(method=sampling_method
+#                         , number=n_resample
+#                         #, repeats=repeats
+#                          #, seeds = seeds
+#                          )
+#     tune_grid <- expand.grid(mtry=mtry)
+#     mdl <- train(mdl_frmla, data=train_sst_df, 
+#                                            preProcess=preProcess, 
+#                                            method="rf", tuneGrid=tune_grid
+#                  , trControl = ctrl
+#                 )
+#     #print(mdl)
+#     #varImp(mdl)
+#     
+#     df <- data.frame(
+#                     num_feats=num_feats,
+#                     p_obs=p_obs,
+#                     preProcess=paste(preProcess, collapse=";"),
+#                     sampling_method=sampling_method,
+#                     n_resample=nrow(mdl$resample),
+#                     mtry=mdl$results[nrow(mdl$results), "mtry"],
+#                     accuracy_train=mdl$results[nrow(mdl$results), "Accuracy"],
+#                     accuracy_valdt=sum((validate_df$classe == 
+#                                         predict(mdl, newdata=validate_df)) * 1) / 
+#                                     nrow(validate_df),                                    
+#                     elapsed=mdl$times$everything["elapsed"])
+#     return(list(fit_mdl=mdl, fit_df=df))
+# }
+# 
+# # retval[mdl, df] <- train_model(num_feats=4, p_obs=0.01, preProcess=c("center", "scale"), 
+# #                               sampling_method="boot")
+# 
+# attach(train_model(num_feats=3, p_obs=0.01, preProcess=c("center", "scale"), 
+#                    sampling_method="boot", n_resample=25, mtry=3))
+# #predict(fit_mdl, newdata=validate_df)
+# #print(fit_df)
+# base_mdl <- fit_mdl; predict(base_mdl, newdata=validate_df)
+# models_df <- rbind(models_df, fit_df); print(models_df)
+# 
+# attach(train_model(num_feats=6, p_obs=0.01, preProcess=c("center", "scale"), 
+#                    sampling_method="boot", n_resample=25, mtry=3))
+# num_feats_6_mdl <- fit_mdl; predict(num_feats_6_mdl, newdata=validate_df)
+# models_df <- rbind(models_df, fit_df); print(models_df)
+# 
+# attach(train_model(num_feats=3, p_obs=0.02, preProcess=c("center", "scale"), 
+#                    sampling_method="boot", n_resample=25, mtry=3))
+# p_obs_0_02_mdl <- fit_mdl; predict(p_obs_0_02_mdl, newdata=validate_df)
+# models_df <- rbind(models_df, fit_df); print(models_df)
+# 
+# attach(train_model(num_feats=3, p_obs=0.01, preProcess=c("center", "scale"), 
+#                    sampling_method="boot", n_resample=20, mtry=3))
+# n_resample_20_mdl <- fit_mdl; predict(n_resample_20_mdl, newdata=validate_df)
+# models_df <- rbind(models_df, fit_df); print(models_df)
+# 
+# attach(train_model(num_feats=3, p_obs=0.01, preProcess=NULL, 
+#                    sampling_method="boot", n_resample=25, mtry=3))
+# preProcess_NULL_mdl <- fit_mdl; predict(preProcess_NULL_mdl, newdata=validate_df)
+# models_df <- rbind(models_df, fit_df); print(models_df)
+# 
+# attach(train_model(num_feats=3, p_obs=0.01, preProcess=c("center", "scale"), 
+#                    sampling_method="cv", n_resample=25, mtry=3))
+# sampling_method_cv_mdl <- fit_mdl; predict(sampling_method_cv_mdl, newdata=validate_df)
+# models_df <- rbind(models_df, fit_df); print(models_df)
+# 
+# attach(train_model(num_feats=6, p_obs=0.01, preProcess=c("center", "scale"), 
+#                    sampling_method="boot", n_resample=25, mtry=6))
+# mtry_6_mdl <- fit_mdl; predict(mtry_6_mdl, newdata=validate_df)
+# models_df <- rbind(models_df, fit_df); print(models_df)
 
-num_feats <- 2
-p_obs <- 0.01
-preProcess <- c("center", "scale")
-sampling_method <- "boot"
+feats_df <- data.frame(response.cor=cor(train_df[, features_lst], 
+                                        unclass(train_df[, response_varname])))
+feats_df$feature <- rownames(feats_df)
+feats_df$response.cor.abs <- abs(feats_df$response.cor)
+feats_df <- orderBy(~ -response.cor.abs, data=feats_df)
+print(head(feats_df))
 
-fit_time_df <- data.frame()
-for (num_feats in seq(4, 4, 2)) {
-    print(sprintf("num_feats:%d", num_feats))
-    mdl_sst_formula <- reformulate(features_lst[1:num_feats], "classe")
-    train_sst_df <- train_df[createDataPartition(y=train_df$classe, p=p_obs, 
-                                                 list=FALSE), ]
-    ctrl <- trainControl(method=sampling_method
-                         #, repeats = 5
+# Extract features that have higher correlation than 'my.rnorm'
+feats_all_df <- feats_df
+feats_df <- subset(feats_all_df, 
+    response.cor.abs >= feats_all_df[which(feats_all_df$feature == random_varname),
+                                    "response.cor.abs"])
+
+train_model <- function(par_row) {
+    #print(sprintf("num_feats: %d", num_feats))
+    #print(sprintf("p_obs: %f", par_row$p_obs))
+    
+    set.seed(12345)
+    mdl_frmla <- reformulate(feats_df$feature[1:par_row$num_feats], response_varname)
+    train_sst_df <- train_df[createDataPartition(y=train_df$classe, p=par_row$p_obs, 
+                                                 list=FALSE), 
+                             c("classe", feats_df$feature[1:par_row$num_feats])]
+    ctrl <- trainControl(method=par_row$sampling_method
+                        , number=par_row$n_resample
+                        #, repeats=repeats
                          #, seeds = seeds
                          )
-    mdl <- train(mdl_sst_formula, data=train_sst_df, 
-                                           preProcess=preProcess, 
-                                           method="rf"
+    tune_grid <- expand.grid(mtry=par_row$mtry)
+    mdl <- train(mdl_frmla, data=train_sst_df, 
+                                           preProcess=eval(parse(text=par_row$preProcess)),
+                                           method="rf", tuneGrid=tune_grid
                  , trControl = ctrl
-                 )
+                )
     #print(mdl)
-    #fit_time_df <- data.frame()
+    #varImp(mdl)
     
-    fit_time_df <- rbind(fit_time_df, 
-                         data.frame(num_feats=num_feats,
-                                    p_obs=p_obs,
-                                    preProcess=paste(preProcess, collapse=";"),
-                                    sampling_method=sampling_method,
-                                    n_resample=nrow(mdl$resample),
-                                    mtry=mdl$results[nrow(mdl$results), "mtry"],
-                                    #accuracy=mdl$results[nrow(mdl$results), "Accuracy"],
-                                    accuracy=mdl$results[nrow(mdl$results), "Accuracy"],                                    
-                                    elapsed=mdl$times$everything["elapsed"]))
+    df <- data.frame(
+                    num_feats=par_row$num_feats,
+                    p_obs=par_row$p_obs,
+                    preProcess=par_row$preProcess,
+                    sampling_method=par_row$sampling_method,
+                    n_resample=nrow(mdl$resample),
+                    mtry=mdl$results[nrow(mdl$results), "mtry"],
+                    accuracy_train=mdl$results[nrow(mdl$results), "Accuracy"],
+                    accuracy_valdt=sum((validate_df$classe == 
+                                        predict(mdl, newdata=validate_df)) * 1) / 
+                                    nrow(validate_df),                                    
+                    elapsed=mdl$times$everything["elapsed"])
+    rownames(df) <- par_row$mdl_name
+    return(list(fit_mdl=mdl, fit_df=df))
 }
-print(fit_time_df)
+
+models_lst <- NULL
+
+par_grid <- data.frame(mdl_name='base', num_feats=nrow(feats_df) / 2, p_obs=0.20, preProcess='NULL', 
+                        sampling_method="cv", n_resample=10, mtry=3, stringsAsFactors=FALSE)
+par_grid[2:7, ] <- par_grid[1, ]
+
+par_grid[2, "mdl_name"] <- "num_feats=all";        par_grid[2, "num_feats"] <- nrow(feats_df)
+par_grid[3, "mdl_name"] <- "p_obs=0.30";            par_grid[3, "p_obs"] <- 0.30
+par_grid[4, "mdl_name"] <- "preProcess=center;scl"; par_grid[4, "preProcess"] <- 'c("center", "scale")'
+par_grid[5, "mdl_name"] <- "sampling_method=boot";  par_grid[5, "sampling_method"] <- 'boot'
+par_grid[6, "mdl_name"] <- "n_resample=15";         par_grid[6, "n_resample"] <- 15
+par_grid[7, "mdl_name"] <- "mtry=6";                par_grid[7, "mtry"] <- 6
+
+#par_grid[2:7, "n_resample"] <- 10
+#par_grid[2:7, "sampling_method"] <- 'cv'
+print(par_grid)
+
+#eval(parse(text=par_grid[1, "preProcess"]))
+models_df <- data.frame()
+for (row in 1:nrow(par_grid)) {
+    print(sprintf("row: %d", row))
+    attach(train_model(par_grid[row, ]))
+    mdl <- fit_mdl; head(predict(mdl, newdata=validate_df)); #print(mdl)
+    models_df <- rbind(models_df, fit_df); #print(models_df)
+    if (row == 1) mdl_1 <- mdl
+    if (row == 2) mdl_2 <- mdl
+    if (row == 3) mdl_3 <- mdl
+    if (row == 4) mdl_4 <- mdl    
+    if (row == 5) mdl_5 <- mdl    
+    if (row == 6) mdl_6 <- mdl    
+    if (row == 7) mdl_7 <- mdl    
+}
+
+require(plyr)
+models_df$id <- rownames(models_df)
+models_df$accuracy_valdt_ix <- models_df$accuracy_valdt * 100.0 / models_df$accuracy_valdt[1]
+models_df$elapsed_ix <- models_df$elapsed * 100.0 / models_df$elapsed[1]
+models_df <- mutate(models_df, color=ifelse((id == "base"), "black", "NavyBlue"))
+print(orderBy(~ - elapsed_ix + accuracy_valdt_ix, data=models_df))
+print(myplot_scatter(models_df, "elapsed_ix", "accuracy_valdt_ix") + 
+      geom_text(aes(label=id, color=color), size=3) + 
+    theme(legend.position="none"))
+
+sel_mdl <- mdl_1
+print(varImp(sel_mdl))
+
+#plot(mdl_1$finalModel, uniform=TRUE, main="base")
+#text(mdl_1$finalModel, use.n=TRUE, all=TRUE, cex=0.8)
+
+par_grid <- data.frame(num_feats=6, p_obs=0.01, preProcess='NULL', 
+                        sampling_method="boot", n_resample=25, mtry=3, stringsAsFactors=FALSE)
+print(par_grid)
+eval(parse(text=par_grid[1, "preProcess"]))
+
+# retval[mdl, df] <- train_model(num_feats=4, p_obs=0.01, preProcess=c("center", "scale"), 
+#                               sampling_method="boot")
+
+
+attach(train_model(num_feats=6, p_obs=0.01, preProcess=c("center", "scale"), 
+                   sampling_method="boot", n_resample=25, mtry=3))
+num_feats_6_mdl <- fit_mdl; predict(num_feats_6_mdl, newdata=validate_df)
+models_df <- rbind(models_df, fit_df); print(models_df)
+
+attach(train_model(num_feats=3, p_obs=0.02, preProcess=c("center", "scale"), 
+                   sampling_method="boot", n_resample=25, mtry=3))
+p_obs_0_02_mdl <- fit_mdl; predict(p_obs_0_02_mdl, newdata=validate_df)
+models_df <- rbind(models_df, fit_df); print(models_df)
+
+attach(train_model(num_feats=3, p_obs=0.01, preProcess=c("center", "scale"), 
+                   sampling_method="boot", n_resample=20, mtry=3))
+n_resample_20_mdl <- fit_mdl; predict(n_resample_20_mdl, newdata=validate_df)
+models_df <- rbind(models_df, fit_df); print(models_df)
+
+attach(train_model(num_feats=3, p_obs=0.01, preProcess=NULL, 
+                   sampling_method="boot", n_resample=25, mtry=3))
+preProcess_NULL_mdl <- fit_mdl; predict(preProcess_NULL_mdl, newdata=validate_df)
+models_df <- rbind(models_df, fit_df); print(models_df)
+
+attach(train_model(num_feats=3, p_obs=0.01, preProcess=c("center", "scale"), 
+                   sampling_method="cv", n_resample=25, mtry=3))
+sampling_method_cv_mdl <- fit_mdl; predict(sampling_method_cv_mdl, newdata=validate_df)
+models_df <- rbind(models_df, fit_df); print(models_df)
+
+attach(train_model(num_feats=6, p_obs=0.01, preProcess=c("center", "scale"), 
+                   sampling_method="boot", n_resample=25, mtry=6))
+mtry_6_mdl <- fit_mdl; predict(mtry_6_mdl, newdata=validate_df)
+models_df <- rbind(models_df, fit_df); print(models_df)
 
 #print(mdl_sst_formula)
 #print(table(train_sst_df$classe, train_sst_df$user_name))
@@ -212,6 +408,7 @@ print(fit_time_df)
 #                                  preProcess=c("center", "scale"), 
 #                                  method="rf")
 
+a_benchmark_trg_sst_mdl <- mdl
 test_df[, paste0("classe.predict.", "a_benchmark_trg_sst_mdl")] <-
             predict(a_benchmark_trg_sst_mdl, test_df)
 print(confusionMatrix(test_df[, "classe"], 
