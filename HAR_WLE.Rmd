@@ -416,6 +416,37 @@ print(confusionMatrix(test_df[, "classe"],
                                        "a_benchmark_trg_sst_mdl")]))
 ```
 
+### Step ??: fit model for all training data
+```{r fit_model_train_validate, cache=TRUE}
+par_grid <- data.frame(mdl_name='train_all', num_feats=nrow(feats_df) / 2, p_obs=1.00, preProcess='NULL', 
+                        sampling_method="cv", n_resample=10, mtry=3, stringsAsFactors=FALSE)
+print(par_grid)
+
+attach(train_model(par_grid[1, ]))
+train_all_mdl <- fit_mdl; 
+print(head(predict(train_all_mdl, newdata=validate_df)))
+print(train_all_mdl)
+print(varImp(train_all_mdl))
+train_all_models_df <- fit_df)
+print(train_all_models_df)
+
+```
+### Step ??: fit model for all training & validation data
+```{r fit_model_train_validate, cache=TRUE}
+par_grid <- data.frame(mdl_name='train_validate_all', num_feats=nrow(feats_df) / 2, p_obs=1.00, preProcess='NULL', 
+                        sampling_method="cv", n_resample=10, mtry=3, stringsAsFactors=FALSE)
+print(par_grid)
+
+attach(train_model(par_grid[1, ]))
+train_validate_all_mdl <- fit_mdl; 
+print(head(predict(train_validate_all_mdl, newdata=test_df)))
+print(train_validate_all_mdl)
+print(varImp(train_validate_all_mdl))
+train_validate_all_models_df <- fit_df)
+print(train_validate_all_models_df)
+
+```
+
 ### Step 11: predict results for new data
 ```{r predict_newdata_1, cache=TRUE}
 predict_df[, paste0("classe.predict.", "a_benchmark_trg_sst_mdl")] <-
