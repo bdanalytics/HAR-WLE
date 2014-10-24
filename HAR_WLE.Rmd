@@ -8,23 +8,49 @@ author: "bdanalytics"
 
 Data: Measurement of exercises performed by six male participants aged between 20-28 years, with little weight lifting experience using a light dumbbell (1.25kg)  
 Source: http://groupware.les.inf.puc-rio.br/har  
-Time period: 
+Time period: Nov - Dec 2011 (based on cvtd_timestamp values in data)
 
 ### Synopsis:
 
-How you built your model:
+#### Model Summary: Random Forests:
 
-How you used cross validation:
+#### How you built your model:
+1. Selected Random Forests (rf) since this is a multi-class classification problem & the associated research paper indicated that the original data collectors also utilized this algorithm.
 
-What you think the expected out of sample error is:
+2. Optimized fitting the model (first run on training data took a long time & did not complete) by  
+    2.1 Partitioned training data into training & validation data (80% - 20% split - similar to training-testing split)  
+    2.2 Selected subset of training data - both rows & columns to fit "base" model within 30 elapsed seconds  
+    2.3 Identified "base" model parameters such as pre-processing type, sampling method, number of resamples, mtry (rf tuning parameter) etc.  
+    2.4 Generated a model parameter grid to vary parameters from the "base" model specifications  
+    2.5 Fit one model for each row in the model parameter grid & collected elapsed time and prediction accuracy on the validation data set.  
+    2.6 Optimized trade-off between elapsed time & validation data prediction accuracy to fit the "tuned" model within 60 elapsed seconds. This turned out to include only half the potential features and 20% of training data   
+    
+3. Enhanced model to fit all training (incl. validation) data & tested prediction accuracy on testing data
 
-Why you made the choices you did:
+4. Enhanced model to fit all training (incl. validation & testing) data & generated predictions on new data
 
-Use your prediction model to predict 20 different test cases:
+#### How you used cross validation:
+1. Utilized caret's in-built sampling methods to select observations and features for each tree in the random forest
 
-Potential next steps include:
+2. Sampled observations to optimize model fitting elapsed time vs. validation data prediction accuracy
 
-### Analysis 
+#### What you think the expected out of sample error is:
+Very low (compared to other machine learning exercises) since the random forests generated near-zero prediction mistakes on the validation data set. Prediction accuracy on testing data was ???. 
+
+#### Why you made the choices you did:
+Explained classification algorithm selection earlier. Most of the effort went into optimizing the trade-offs between fitting time and prediction accuracy.
+
+#### Use your prediction model to predict 20 different test cases:
+Brief summary of the prediciton results on new data:
+
+#### Potential next steps include:
+
+1. Plot the final model
+2. Compress analysis report (please feel free to stop here if you feel that the entire report is too detailed)
+3. Peform PCA pre-processing and select "key" features to make the model more interpretable 
+4. Evaluate other classification algorithms (e.g. SVMs, kNN, etc.) 
+
+### Analysis: 
 ```{r set_global_options}
 rm(list=ls())
 set.seed(12345)
@@ -32,13 +58,15 @@ source("~/Dropbox/datascience/R/mydsutils.R")
 source("~/Dropbox/datascience/R/myplot.R")
 # Gather all package requirements here
 suppressPackageStartupMessages(require(caret))
+suppressPackageStartupMessages(require(plyr))
 ```
 
 ```{r set_global_options_wd, echo=FALSE}
 setwd("~/Documents/Work/Courses/Coursera/jhu-datascience/H-Practical-Machine-Learning/Project/HAR-WLE")
+script_df <- data.frame(chunk_label="import_data", chunk_step_major=1, chunk_step_minor=0)
 ```
 
-### Step 01: import data
+#### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: import data
 ```{r import_data, cache=TRUE}
 entity_df <- myimport_data(
     "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", 
@@ -46,9 +74,13 @@ entity_df <- myimport_data(
 predict_df <- myimport_data(
     "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", 
     print_diagn=FALSE)
+
+script_df <- rbind(script_df, 
+                   data.frame(chunk_label="inspect_data", 
+                              chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))
 ```
 
-#### Step 02.1: inspect data
+#### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: inspect data
 ```{r inspect_data_1, cache=TRUE}
 #print(str(entity_df))
 #print(str(predict_df))
@@ -62,16 +94,16 @@ predict_df <- myimport_data(
 # cvtd_timestamp:       factor:                 [excluded for modeling]
 
 # new_window:           factor: no; yes         [only no in predict_df]
-# num_window:           int:    1:19622         [excluded for modeling ?]
+# num_window:           int:    1:19622         
 
-# classe:               factor: 5 categories    [prediction variable]
+# classe:               factor: 5 categories    [response variable]
 # problem_id:           int:    1:20            [only in predict_df]
 
 #print(summary(entity_df))
 print(summary(predict_df))
 response_varname <- "classe"
 ```
-Many columns in test dataset (predict_df) have missing data for all records. Let's delete these columns from both training & test datasets to make the analysis faster & easier.
+Many columns in new data (predict_df) are missing for all records. Let's delete these columns from both training & new datasets to make the analysis faster & easier.
 
 ```{r inspect_data_2, cache=TRUE}
 all_na_cols <- myfind_all_na_cols_df(predict_df)
@@ -86,28 +118,16 @@ predict_df <- predict_cln_df
 entity_df <- mydelete_cols_df(entity_df, all_na_cols)
 print(summary(entity_df))
 
-# print(myplot_histogram(entity_df[sample(1:nrow(entity_df), 20), ], "classe", 
-#                        fill_col_name="user_name"))
-# print(myplot_histogram(entity_df[sample(1:nrow(entity_df), 20), ], "classe", 
-#                        fill_col_name="user_name", show_stats=FALSE))
 print(myplot_histogram(entity_df, "classe", fill_col_name="user_name"))
 print(myplot_histogram(predict_df, "user_name", show_stats=FALSE))
 
-# print(myplot_scatter(predict_df, "new_window", "num_window", 
-#                      colorcol_name="user_name"))
-# print(myplot_scatter(entity_df, "new_window", "num_window", 
-#                      colorcol_name="user_name"))
-# print(myplot_scatter(entity_df, "new_window", "num_window", 
-#                      colorcol_name="classe"))
-#pairs(subset(entity_df, select=-c(col_symbol)))
-
-# Create new features that help diagnostics
-#   Convert factors to dummy variables
-#   Build splines   require(splines); bsBasis <- bs(training$age, df=3)
+script_df <- rbind(script_df, 
+                   data.frame(chunk_label="select_features", 
+                              chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
 ```
 
-### Step 03: extract features
-```{r extract_features_2, cache=TRUE}
+#### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: select features
+```{r select_features_1, cache=TRUE}
 features_lst <- names(predict_df)
 
 # Remove features that are not relevant for modeling
@@ -115,188 +135,110 @@ features_lst <- features_lst[!(features_lst %in%
                                 c("X", "user_name", "problem_id"))]
 features_lst <- features_lst[!(features_lst %in% 
                                 grep("timestamp", features_lst, value=TRUE))]
-## remove nearZeroVar features (not much variance)
-#require(reshape)
-#var_features_df <- melt(summaryBy(. ~ factor(0), data=entity_df[, features_lst], 
-#                             FUN=var, keep.names=TRUE), 
-#                             variable_name=c("feature"))
-#names(var_features_df)[2] <- "var"
-#print(var_features_df[order(var_features_df$var), ])
-# summaryBy ignores factors whereas nearZeroVar inspects factors
-print(nearZeroVar(entity_df[, features_lst], saveMetrics=TRUE))
-nearZeroVars <- features_lst[nearZeroVar(entity_df[, features_lst])]
-#print(var(entity_df[, nearZeroVars]))
-#print(var(entity_df[, features_lst]))
+
+feats_df <- nearZeroVar(entity_df[, features_lst], saveMetrics=TRUE)
+feats_df$feature <- rownames(feats_df)
+print(subset(feats_df, nzv == TRUE))
+nearZeroVars <- subset(feats_df, nzv == TRUE)$feature
 print(summary(entity_df[, nearZeroVars]))
 print(summary(predict_df[, nearZeroVars]))
 
-features_lst <- features_lst[!(features_lst %in% nearZeroVars)]
+feats_df <- subset(feats_df, nzv == FALSE)
 ```
 
-Let's add a random variable (my.rnorm) as a feature since some models (e.g. random forests) need a random varaible & any model that categorizes this feature as significant would be suspect.  
-```{r extract_features_4, cache=TRUE}
+Let's add a random variable (my.rnorm) as a feature since some models (e.g. random forests) like a random variable & any model that categorizes this feature as significant would be suspect.
+
+```{r select_features_2, cache=TRUE}
 random_varname <- "my.rnorm"
 predict_df$my.rnorm <- rnorm(nrow(predict_df))
 entity_df$my.rnorm <- rnorm(nrow(entity_df))
-features_lst <- c(features_lst, "my.rnorm")
+feats_df[nrow(feats_df) + 1, "feature"] <- random_varname
+
+script_df <- rbind(script_df, 
+                   data.frame(chunk_label="partition_data", 
+                              chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
 ```
 
-### Step 04: build training, validation & test datasets
-```{r build_datasets_2, cache=TRUE}
-print(table(entity_df$classe, entity_df$user_name))
-# k_fold <- 5
-# entity_df[order(entity_df$classe, 
-#                   entity_df$user_name, 
-#                   entity_df$my.rnorm),"my.cv_ix"] <- 
-#     rep(1:k_fold, length.out=nrow(entity_df))
-# summaryBy(X ~ my.cv_ix, data=entity_df, FUN=length)
-# tapply(entity_df$X, list(entity_df$classe, entity_df$user_name, 
-#                            entity_df$my.cv_ix), length)
+#### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: partition data
+```{r partition_data, cache=TRUE}
+print(table(entity_df[, response_varname], entity_df$user_name))
 
-#require(DAAG)
-#entity_df$classe.proper <- as.numeric(entity_df$classe == "A")
-#rnorm.glm <- glm(classe.proper ~ rnorm, family=binomial, data=entity_df)
-#cv.binary(rnorm.glm, nfolds=k_fold, print.details=TRUE)
-#result <- cv.lm(df=entity_df, form.lm=formula(classe ~ rnorm), 
-#                    m=k_fold, seed=12345, printit=TRUE)
+inTrain <- createDataPartition(y=entity_df[, response_varname], p=0.8, list=FALSE)
+train_df <- entity_df[inTrain, c(feats_df$feature, response_varname, "user_name")]
+test_df <- entity_df[-inTrain, c(feats_df$feature, response_varname, "user_name")]
 
-inTrain <- createDataPartition(y=entity_df$classe, p=0.8, list=FALSE)
-train_df <- entity_df[inTrain, c(features_lst, "classe", "user_name")]
-test_df <- entity_df[-inTrain, c(features_lst, "classe", "user_name")]
-
-inValidate <- createDataPartition(y=train_df$classe, p=0.8, list=FALSE)
-train_df <- train_df[inValidate, c(features_lst, "classe", "user_name")]
-validate_df <- train_df[-inValidate, c(features_lst, "classe", "user_name")]
+inValidate <- createDataPartition(y=train_df[, response_varname], p=0.8, list=FALSE)
+train_df <- train_df[inValidate, c(feats_df$feature, response_varname, "user_name")]
+validate_df <- train_df[-inValidate, c(feats_df$feature, response_varname, "user_name")]
 print(table(train_df$classe, train_df$user_name))
 print(table(validate_df$classe, validate_df$user_name))
 print(table(test_df$classe, test_df$user_name))
+
+script_df <- rbind(script_df, 
+                   data.frame(chunk_label="select_features", 
+                              chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
 ```
 
-### Step 07: design models
+#### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: select features
 ```{r design_models_1, cache=TRUE}
-# retList <- structure(NA,class="result")
-# "[<-.result" <- function(x,...,value) {
-#    args <- as.list(match.call())
-#    args <- args[-c(1:2,length(args))]
-#    length(value) <- length(args)
-#    for(i in seq(along=args)) {
-#      a <- args[[i]]
-#      if(!missing(a)) eval.parent(substitute(a <- v,list(a=a,v=value[[i]])))
-#    }
-#    x
-# }
-# 
-# train_model_old <- function(num_feats, p_obs, preProcess, sampling_method, n_resample, mtry) {
-#     print(sprintf("num_feats:%d", num_feats))
-#     mdl_frmla <- reformulate(features_lst[1:num_feats], "classe")
-#     train_sst_df <- train_df[createDataPartition(y=train_df$classe, p=p_obs, 
-#                                                  list=FALSE), 
-#                              c("classe", features_lst[1:num_feats])]
-#     ctrl <- trainControl(method=sampling_method
-#                         , number=n_resample
-#                         #, repeats=repeats
-#                          #, seeds = seeds
-#                          )
-#     tune_grid <- expand.grid(mtry=mtry)
-#     mdl <- train(mdl_frmla, data=train_sst_df, 
-#                                            preProcess=preProcess, 
-#                                            method="rf", tuneGrid=tune_grid
-#                  , trControl = ctrl
-#                 )
-#     #print(mdl)
-#     #varImp(mdl)
-#     
-#     df <- data.frame(
-#                     num_feats=num_feats,
-#                     p_obs=p_obs,
-#                     preProcess=paste(preProcess, collapse=";"),
-#                     sampling_method=sampling_method,
-#                     n_resample=nrow(mdl$resample),
-#                     mtry=mdl$results[nrow(mdl$results), "mtry"],
-#                     accuracy_train=mdl$results[nrow(mdl$results), "Accuracy"],
-#                     accuracy_valdt=sum((validate_df$classe == 
-#                                         predict(mdl, newdata=validate_df)) * 1) / 
-#                                     nrow(validate_df),                                    
-#                     elapsed=mdl$times$everything["elapsed"])
-#     return(list(fit_mdl=mdl, fit_df=df))
-# }
-# 
-# # retval[mdl, df] <- train_model(num_feats=4, p_obs=0.01, preProcess=c("center", "scale"), 
-# #                               sampling_method="boot")
-# 
-# attach(train_model(num_feats=3, p_obs=0.01, preProcess=c("center", "scale"), 
-#                    sampling_method="boot", n_resample=25, mtry=3))
-# #predict(fit_mdl, newdata=validate_df)
-# #print(fit_df)
-# base_mdl <- fit_mdl; predict(base_mdl, newdata=validate_df)
-# models_df <- rbind(models_df, fit_df); print(models_df)
-# 
-# attach(train_model(num_feats=6, p_obs=0.01, preProcess=c("center", "scale"), 
-#                    sampling_method="boot", n_resample=25, mtry=3))
-# num_feats_6_mdl <- fit_mdl; predict(num_feats_6_mdl, newdata=validate_df)
-# models_df <- rbind(models_df, fit_df); print(models_df)
-# 
-# attach(train_model(num_feats=3, p_obs=0.02, preProcess=c("center", "scale"), 
-#                    sampling_method="boot", n_resample=25, mtry=3))
-# p_obs_0_02_mdl <- fit_mdl; predict(p_obs_0_02_mdl, newdata=validate_df)
-# models_df <- rbind(models_df, fit_df); print(models_df)
-# 
-# attach(train_model(num_feats=3, p_obs=0.01, preProcess=c("center", "scale"), 
-#                    sampling_method="boot", n_resample=20, mtry=3))
-# n_resample_20_mdl <- fit_mdl; predict(n_resample_20_mdl, newdata=validate_df)
-# models_df <- rbind(models_df, fit_df); print(models_df)
-# 
-# attach(train_model(num_feats=3, p_obs=0.01, preProcess=NULL, 
-#                    sampling_method="boot", n_resample=25, mtry=3))
-# preProcess_NULL_mdl <- fit_mdl; predict(preProcess_NULL_mdl, newdata=validate_df)
-# models_df <- rbind(models_df, fit_df); print(models_df)
-# 
-# attach(train_model(num_feats=3, p_obs=0.01, preProcess=c("center", "scale"), 
-#                    sampling_method="cv", n_resample=25, mtry=3))
-# sampling_method_cv_mdl <- fit_mdl; predict(sampling_method_cv_mdl, newdata=validate_df)
-# models_df <- rbind(models_df, fit_df); print(models_df)
-# 
-# attach(train_model(num_feats=6, p_obs=0.01, preProcess=c("center", "scale"), 
-#                    sampling_method="boot", n_resample=25, mtry=6))
-# mtry_6_mdl <- fit_mdl; predict(mtry_6_mdl, newdata=validate_df)
-# models_df <- rbind(models_df, fit_df); print(models_df)
+# Compute feature correlations with response to prioritize feature selection for model design
+feats_cor_df <- data.frame( response.cor=cor(train_df[, feats_df$feature], 
+                            unclass(train_df[, response_varname])))
+feats_cor_df$response.cor.abs <- abs(feats_cor_df$response.cor)
+feats_cor_df$feature <- rownames(feats_cor_df)
+feats_cor_df <- orderBy(~ -response.cor.abs, data=feats_cor_df)
 
-feats_df <- data.frame(response.cor=cor(train_df[, features_lst], 
-                                        unclass(train_df[, response_varname])))
-feats_df$feature <- rownames(feats_df)
-feats_df$response.cor.abs <- abs(feats_df$response.cor)
-feats_df <- orderBy(~ -response.cor.abs, data=feats_df)
-print(head(feats_df))
+intersect(names(feats_df), names(feats_cor_df))
+feats_tmp_df <- merge(feats_df, feats_cor_df)
+feats_tmp_df <- orderBy(~ -response.cor.abs, data=feats_tmp_df)
+print(head(feats_tmp_df))
+print(head(feats_cor_df))
 
-# Extract features that have higher correlation than 'my.rnorm'
-feats_all_df <- feats_df
+feats_all_df <- feats_tmp_df
+
+# Extract features that have higher correlation than the random variable that was inducted ('my.rnorm')
 feats_df <- subset(feats_all_df, 
     response.cor.abs >= feats_all_df[which(feats_all_df$feature == random_varname),
                                     "response.cor.abs"])
+myprint_df(feats_df)
 
-train_model <- function(par_row) {
+script_df <- rbind(script_df, 
+                   data.frame(chunk_label="design_models", 
+                              chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
+```
+
+#### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: design models
+```{r design_models, cache=TRUE}
+
+# Create a function to fit a model based on different tuning parameters which will be used to optimize fit elapsed time vs. validation data prediction accuracy
+mytrain_model <- function(par_row, trg_df=train_df) {
     #print(sprintf("num_feats: %d", num_feats))
     #print(sprintf("p_obs: %f", par_row$p_obs))
     
+    # Because of random forests, let's try to make each fit run as similar as possible
     set.seed(12345)
+    
     mdl_frmla <- reformulate(feats_df$feature[1:par_row$num_feats], response_varname)
-    train_sst_df <- train_df[createDataPartition(y=train_df$classe, p=par_row$p_obs, 
-                                                 list=FALSE), 
-                             c("classe", feats_df$feature[1:par_row$num_feats])]
+    train_sst_df <- train_df[createDataPartition(y=train_df[, response_varname], 
+                                                 p=par_row$p_obs, list=FALSE), 
+                             c(response_varname, feats_df$feature[1:par_row$num_feats])]
     ctrl <- trainControl(method=par_row$sampling_method
                         , number=par_row$n_resample
                         #, repeats=repeats
-                         #, seeds = seeds
-                         )
+                        #, seeds = seeds
+                        )
+    
+    # mtry is a tuning parameter for random forests
     tune_grid <- expand.grid(mtry=par_row$mtry)
     mdl <- train(mdl_frmla, data=train_sst_df, 
-                                           preProcess=eval(parse(text=par_row$preProcess)),
-                                           method="rf", tuneGrid=tune_grid
-                 , trControl = ctrl
+                preProcess=eval(parse(text=par_row$preProcess)),
+                method="rf", tuneGrid=tune_grid
+                , trControl = ctrl
                 )
     #print(mdl)
-    #varImp(mdl)
+    #print(varImp(mdl))
     
+    # collect fitting results data
     df <- data.frame(
                     num_feats=par_row$num_feats,
                     p_obs=par_row$p_obs,
@@ -310,16 +252,27 @@ train_model <- function(par_row) {
                                     nrow(validate_df),                                    
                     elapsed=mdl$times$everything["elapsed"])
     rownames(df) <- par_row$mdl_name
+    
+    # this took a long time to figure out. model object from caret package cannot
+    #   be coerced into the return data frame. Please feel free to suggest a 
+    #   beter method to handle multiple return objects 
     return(list(fit_mdl=mdl, fit_df=df))
 }
 
-models_lst <- NULL
+# Run this process several times to 
+#   maximize feature selection, 
+#   maximize utilization of all training data observations
+#   maximize accuracy of predictions on validation data
+#   minimize elapsed time of fitting
+#   The constraints at this step:
+#       elapsed time < 60 secs
 
-par_grid <- data.frame(mdl_name='base', num_feats=nrow(feats_df) / 2, p_obs=0.20, preProcess='NULL', 
-                        sampling_method="cv", n_resample=10, mtry=3, stringsAsFactors=FALSE)
+par_grid <- data.frame(mdl_name='base', num_feats=nrow(feats_df) / 2, p_obs=0.20, 
+                       preProcess='NULL', sampling_method="cv", n_resample=10, 
+                       mtry=3, stringsAsFactors=FALSE)
 par_grid[2:7, ] <- par_grid[1, ]
 
-par_grid[2, "mdl_name"] <- "num_feats=all";        par_grid[2, "num_feats"] <- nrow(feats_df)
+par_grid[2, "mdl_name"] <- "num_feats=all";         par_grid[2, "num_feats"] <- nrow(feats_df)
 par_grid[3, "mdl_name"] <- "p_obs=0.30";            par_grid[3, "p_obs"] <- 0.30
 par_grid[4, "mdl_name"] <- "preProcess=center;scl"; par_grid[4, "preProcess"] <- 'c("center", "scale")'
 par_grid[5, "mdl_name"] <- "sampling_method=boot";  par_grid[5, "sampling_method"] <- 'boot'
@@ -330,11 +283,10 @@ par_grid[7, "mdl_name"] <- "mtry=6";                par_grid[7, "mtry"] <- 6
 #par_grid[2:7, "sampling_method"] <- 'cv'
 print(par_grid)
 
-#eval(parse(text=par_grid[1, "preProcess"]))
 models_df <- data.frame()
 for (row in 1:nrow(par_grid)) {
     print(sprintf("row: %d", row))
-    attach(train_model(par_grid[row, ]))
+    attach(mytrain_model(par_grid[row, ]))
     mdl <- fit_mdl; head(predict(mdl, newdata=validate_df)); #print(mdl)
     models_df <- rbind(models_df, fit_df); #print(models_df)
     if (row == 1) mdl_1 <- mdl
@@ -346,93 +298,46 @@ for (row in 1:nrow(par_grid)) {
     if (row == 7) mdl_7 <- mdl    
 }
 
-require(plyr)
 models_df$id <- rownames(models_df)
 models_df$accuracy_valdt_ix <- models_df$accuracy_valdt * 100.0 / models_df$accuracy_valdt[1]
 models_df$elapsed_ix <- models_df$elapsed * 100.0 / models_df$elapsed[1]
 models_df <- mutate(models_df, color=ifelse((id == "base"), "black", "NavyBlue"))
 print(orderBy(~ - elapsed_ix + accuracy_valdt_ix, data=models_df))
-print(myplot_scatter(models_df, "elapsed_ix", "accuracy_valdt_ix") + 
-      geom_text(aes(label=id, color=color), size=3) + 
-    theme(legend.position="none"))
+# print(myplot_scatter(models_df, "elapsed_ix", "accuracy_valdt_ix") + 
+#         geom_text(aes(label=id, color=color), size=3) + 
+#         theme(legend.position="none"))
+print(ggplot(models_df, aes(x=elapsed_ix, y=accuracy_valdt_ix)) +
+        geom_point(aes(size=elapsed), color="grey") +   
+        geom_text(aes(label=id, color=color), size=4) + 
+        theme(legend.position="none"))
 
 sel_mdl <- mdl_1
+print(sel_mdl)
+print(confusionMatrix(validate_df[, response_varname], 
+                      predict(sel_mdl, newdata=validate_df)))
 print(varImp(sel_mdl))
 
-#plot(mdl_1$finalModel, uniform=TRUE, main="base")
-#text(mdl_1$finalModel, use.n=TRUE, all=TRUE, cex=0.8)
-
-par_grid <- data.frame(num_feats=6, p_obs=0.01, preProcess='NULL', 
-                        sampling_method="boot", n_resample=25, mtry=3, stringsAsFactors=FALSE)
-print(par_grid)
-eval(parse(text=par_grid[1, "preProcess"]))
-
-# retval[mdl, df] <- train_model(num_feats=4, p_obs=0.01, preProcess=c("center", "scale"), 
-#                               sampling_method="boot")
-
-
-attach(train_model(num_feats=6, p_obs=0.01, preProcess=c("center", "scale"), 
-                   sampling_method="boot", n_resample=25, mtry=3))
-num_feats_6_mdl <- fit_mdl; predict(num_feats_6_mdl, newdata=validate_df)
-models_df <- rbind(models_df, fit_df); print(models_df)
-
-attach(train_model(num_feats=3, p_obs=0.02, preProcess=c("center", "scale"), 
-                   sampling_method="boot", n_resample=25, mtry=3))
-p_obs_0_02_mdl <- fit_mdl; predict(p_obs_0_02_mdl, newdata=validate_df)
-models_df <- rbind(models_df, fit_df); print(models_df)
-
-attach(train_model(num_feats=3, p_obs=0.01, preProcess=c("center", "scale"), 
-                   sampling_method="boot", n_resample=20, mtry=3))
-n_resample_20_mdl <- fit_mdl; predict(n_resample_20_mdl, newdata=validate_df)
-models_df <- rbind(models_df, fit_df); print(models_df)
-
-attach(train_model(num_feats=3, p_obs=0.01, preProcess=NULL, 
-                   sampling_method="boot", n_resample=25, mtry=3))
-preProcess_NULL_mdl <- fit_mdl; predict(preProcess_NULL_mdl, newdata=validate_df)
-models_df <- rbind(models_df, fit_df); print(models_df)
-
-attach(train_model(num_feats=3, p_obs=0.01, preProcess=c("center", "scale"), 
-                   sampling_method="cv", n_resample=25, mtry=3))
-sampling_method_cv_mdl <- fit_mdl; predict(sampling_method_cv_mdl, newdata=validate_df)
-models_df <- rbind(models_df, fit_df); print(models_df)
-
-attach(train_model(num_feats=6, p_obs=0.01, preProcess=c("center", "scale"), 
-                   sampling_method="boot", n_resample=25, mtry=6))
-mtry_6_mdl <- fit_mdl; predict(mtry_6_mdl, newdata=validate_df)
-models_df <- rbind(models_df, fit_df); print(models_df)
-
-#print(mdl_sst_formula)
-#print(table(train_sst_df$classe, train_sst_df$user_name))
-#print(head(train_sst_df))
-# a_benchmark_trg_sst_mdl <- train(mdl_sst_formula, data=train_sst_df, 
-#                                  preProcess=c("center", "scale"), 
-#                                  method="rf")
-
-a_benchmark_trg_sst_mdl <- mdl
-test_df[, paste0("classe.predict.", "a_benchmark_trg_sst_mdl")] <-
-            predict(a_benchmark_trg_sst_mdl, test_df)
-print(confusionMatrix(test_df[, "classe"], 
-                      test_df[, paste0("classe.predict.", 
-                                       "a_benchmark_trg_sst_mdl")]))
+script_df <- rbind(script_df, 
+                   data.frame(chunk_label="fit_all_train", 
+                              chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
 ```
 
-### Step ??: fit model for all training data
-```{r fit_model_train_validate, cache=TRUE}
-par_grid <- data.frame(mdl_name='train_all', num_feats=nrow(feats_df) / 2, p_obs=1.00, preProcess='NULL', 
-                        sampling_method="cv", n_resample=10, mtry=3, stringsAsFactors=FALSE)
-print(par_grid)
+#### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: fit all training obs
+```{r fit_all_train_validate, cache=TRUE}
+par_row <- par_grid[1, ]; par_row$mdl_name <- 'train_all'; par_row$p_obs <- 1.0; 
+print(par_row)
 
-attach(train_model(par_grid[1, ]))
+attach(mytrain_model(par_row, trg_df=rbind(train_df, validate_df)))
 train_all_mdl <- fit_mdl; 
 print(head(predict(train_all_mdl, newdata=validate_df)))
 print(train_all_mdl)
 print(varImp(train_all_mdl))
-train_all_models_df <- fit_df)
+train_all_models_df <- fit_df
 print(train_all_models_df)
 
 ```
 ### Step ??: fit model for all training & validation data
-```{r fit_model_train_validate, cache=TRUE}
+#```{r fit_model_train_validate, cache=TRUE}
 par_grid <- data.frame(mdl_name='train_validate_all', num_feats=nrow(feats_df) / 2, p_obs=1.00, preProcess='NULL', 
                         sampling_method="cv", n_resample=10, mtry=3, stringsAsFactors=FALSE)
 print(par_grid)
@@ -448,7 +353,7 @@ print(train_validate_all_models_df)
 ```
 
 ### Step 11: predict results for new data
-```{r predict_newdata_1, cache=TRUE}
+#```{r predict_newdata_1, cache=TRUE}
 predict_df[, paste0("classe.predict.", "a_benchmark_trg_sst_mdl")] <-
              predict(a_benchmark_trg_sst_mdl, predict_df)
 print(predict_df[, c("X", "user_name", 
@@ -456,7 +361,7 @@ print(predict_df[, c("X", "user_name",
 ```
 
 ### Step 12: export prediction for new data
-```{r export_prediction_1, cache=TRUE}
+#```{r export_prediction_1, cache=TRUE}
 export_pml_files <- function(x, dir_name) {
 
     if (!file.exists(paste0("./export"))) dir.create("export")
@@ -475,7 +380,7 @@ export_pml_files(predict_df[, paste0("classe.predict.",
 ```
 
 ### Step ##: build training, validation & test datasets
-```{r build_datasets_1, cache=TRUE}
+#```{r build_datasets_1, cache=TRUE}
 ```
 
 ```{r print_sessionInfo, echo=FALSE}
