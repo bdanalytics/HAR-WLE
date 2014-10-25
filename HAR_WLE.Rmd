@@ -1,8 +1,10 @@
 ---
-# Get YAML keywords from myYAML_ref.Rmd
-title: "Human Activity Recognition (HAR): Weight Lifting Exercises (WLE) Classification"
+title: 'Human Activity Recognition (HAR): Weight Lifting Exercises (WLE) Classification'
 author: "bdanalytics"
-#output: html_document
+pandoc_args: ["+RTS", "-K64M", "-RTS"]
+output:
+  html_document:
+    keep_md: yes
 ---
 #### Date: `r format(Sys.time(), "(%a) %b %d, %Y")`
 
@@ -135,6 +137,7 @@ script_df <- rbind(script_df,
 
 #### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: select features
 ```{r select_features_1, cache=TRUE}
+#```{r select_features_1}
 features_lst <- names(predict_df)
 
 # Remove features that are not relevant for modeling
@@ -153,6 +156,7 @@ print(summary(entity_df[, nearZeroVars]))
 print(summary(predict_df[, nearZeroVars]))
 
 feats_df <- subset(feats_df, nzv == FALSE)
+names(feats_df)
 ```
 
 Let's add a random variable (my.rnorm) as a feature since some models (e.g. random forests) like a random variable & any model that categorizes this feature as significant would be suspect.
@@ -217,7 +221,7 @@ script_df <- rbind(script_df,
 ```
 
 #### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: design models
-```{r design_models, cache=TRUE}
+```{r design_models_1, cache=TRUE}
 
 # Create a function to fit a model based on different tuning parameters which will be used to optimize fit elapsed time vs. validation data prediction accuracy
 mytrain_model <- function(par_row, fit_df=train_df) {
@@ -309,6 +313,10 @@ for (row in 1:nrow(par_grid)) {
     if (row == 7) mdl_7 <- mdl    
 }
 
+```
+
+```{r design_models_2, cache=TRUE}
+#```{r design_models_2}
 models_df$id <- rownames(models_df)
 models_df$accuracy_valdt_ix <- models_df$accuracy_valdt * 100.0 / models_df$accuracy_valdt[1]
 models_df$elapsed_ix <- models_df$elapsed * 100.0 / models_df$elapsed[1]
@@ -321,26 +329,56 @@ print(ggplot(models_df, aes(x=elapsed_ix, y=accuracy_valdt_ix)) +
         geom_point(aes(size=elapsed), color="grey") +   
         geom_text(aes(label=id, color=color), size=4) + 
         theme(legend.position="none"))
+```
 
+```{r design_models_3, cache=TRUE}
 sel_mdl <- mdl_1
 print(sel_mdl)
+print(sel_mdl$finalModel)
+
+print(ggplot(train_df, aes_string(x=feats_tmp_df[1, "feature"], 
+                                   y=feats_tmp_df[2, "feature"],
+                                   color=response_varname)) + 
+          geom_point())
+print(ggplot(train_df, aes_string(x=feats_tmp_df[2, "feature"], 
+                                   y=feats_tmp_df[3, "feature"],
+                                   color=response_varname)) + 
+          geom_point())
+
+```
+
+```{r design_models_3_1, cache=TRUE}
+par(mar=c(5,4,4,0)) #No margin on the right side
+plot(sel_mdl$finalModel, log="y")
+par(mar=c(5,0,4,2)) #No margin on the left side
+#plot(c(0,1),type="n", axes=F, xlab="", ylab="")    # not sure what this does
+# the 6 in this code refers to unique(response_varname) + 1 (for OutOfBag)
+legend("top", colnames(sel_mdl$finalModel$err.rate),col=1:6,cex=0.8,fill=1:6)
+
 print(confusionMatrix(validate_df[, response_varname], 
                       predict(sel_mdl, newdata=validate_df)))
 #print(varImp(sel_mdl))
-mymerge_varimp <- function(feats_df, mdl, mdl_name) {
+```
+
+```{r design_models_4, cache=TRUE}
+mymerge_varimp <- function(f_df, mdl, mdl_name) {
     varimp_df <- varImp(mdl)$importance
     varimp_varname <- c(paste0(mdl_name, ".Importance"))
     names(varimp_df) <- varimp_varname
     varimp_df$feature <- rownames(varimp_df)
-    intersect(names(varimp_df), names(feats_df))
+    intersect(names(varimp_df), names(f_df))
     
-    feats_df <- merge(feats_df, varimp_df, all.x=TRUE)
-    print(ggplot(feats_df, aes_string(x="response.cor", y=varimp_varname)) +
-            geom_point(aes(size=freqRatio, shape=percentUniqueCut_fctr), color="grey") +   
-            geom_text(aes(label=feature), size=3.5, color="blue"))
-    return(feats_df)
+    f_df <- merge(f_df, varimp_df, all.x=TRUE)
+    print(ggplot(f_df, aes_string(x="response.cor", y=varimp_varname)) +
+            geom_point(aes_string(size="freqRatio", shape="percentUniqueCut_fctr"), 
+                       color="grey") +   
+            geom_text(aes_string(label="feature"), size=3.5, color="blue"))
+    return(f_df)
 }
+print(names(feats_df))
 feats_df <- mymerge_varimp(feats_df, sel_mdl, "sel_mdl")
+
+feats_tmp_df <- orderBy(~ -response.cor.abs + sel_mdl.Importance, data=feats_df)
 
 script_df <- rbind(script_df, 
                    data.frame(chunk_label="fit_all_train", 
@@ -356,6 +394,7 @@ print(par_row)
 attach(mytrain_model(par_row, fit_df=rbind(train_df, validate_df)))
 train_all_mdl <- fit_mdl; 
 print(train_all_mdl)
+print(train_all_mdl$finalModel)
 print(confusionMatrix(test_df[, response_varname], 
                       predict(train_all_mdl, newdata=test_df)))
 #print(varImp(train_all_mdl))
@@ -376,6 +415,7 @@ print(par_row)
 attach(mytrain_model(par_row, fit_df=entity_df))
 entity_all_mdl <- fit_mdl; 
 print(entity_all_mdl)
+print(entity_all_mdl$finalModel)
 #print(confusionMatrix(test_df[, response_varname], 
 #                      predict(train_all_mdl, newdata=test_df)))
 feats_df <- mymerge_varimp(feats_df, entity_all_mdl, "entity_all_mdl")
