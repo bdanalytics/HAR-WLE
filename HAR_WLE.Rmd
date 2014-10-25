@@ -12,14 +12,22 @@ Data: Measurement of exercises performed by six male participants aged between 2
 Source: http://groupware.les.inf.puc-rio.br/har  
 Time period: Nov - Dec 2011 (based on cvtd_timestamp values in data)
 
+```{r set_global_options_wd, echo=FALSE}
+setwd("~/Documents/Work/Courses/Coursera/jhu-datascience/H-Practical-Machine-Learning/Project/HAR-WLE")
+```
+
 ### Synopsis:
 
 #### Model Summary: Random Forests:
 
+Classification results on test data (3,923 obs - 20% of training data) utilizing top 3 important features:
+![](test_df_scatter_roll_belt_magnet_dumbbell_z_save.png)
+![](test_df_scatter_magnet_dumbbell_z_pitch_forearm_save.png)
+
 #### How you built your model:
 1. Selected Random Forests (rf) since this is a multi-class classification problem & the associated research paper indicated that the original data collectors also utilized this algorithm.
 
-2. Optimized fitting the model (first run on training data took a long time & did not complete) by  
+2. Optimized fitting the model (first run on training data took a long time & did not complete):  
     2.1 Partitioned training data into training & validation data (80% - 20% split - similar to training-testing split)  
     2.2 Selected subset of training data - both rows & columns to fit "base" model within 30 elapsed seconds  
     2.3 Identified "base" model parameters such as pre-processing type, sampling method, number of resamples, mtry (rf tuning parameter) etc.  
@@ -68,10 +76,7 @@ source("~/Dropbox/datascience/R/myplot.R")
 suppressPackageStartupMessages(require(caret))
 suppressPackageStartupMessages(require(plyr))
 suppressPackageStartupMessages(require(reshape2))
-```
 
-```{r set_global_options_wd, echo=FALSE}
-setwd("~/Documents/Work/Courses/Coursera/jhu-datascience/H-Practical-Machine-Learning/Project/HAR-WLE")
 script_df <- data.frame(chunk_label="import_data", chunk_step_major=1, chunk_step_minor=0)
 ```
 
@@ -215,6 +220,22 @@ feats_df <- subset(feats_all_df,
                                     "response.cor.abs"])
 myprint_df(feats_df)
 
+print(ggplot(train_df, aes_string(x=feats_tmp_df[1, "feature"], 
+                                   y=feats_tmp_df[2, "feature"],
+                                   color=response_varname)) + 
+          geom_point())
+print(ggplot(train_df, aes_string(x=feats_tmp_df[1, "feature"], 
+                                   y=feats_tmp_df[3, "feature"],
+                                   color=response_varname)) + 
+          geom_point())
+
+script_df <- rbind(script_df, 
+                   data.frame(chunk_label="inspect_features", 
+                              chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
+```
+
+#### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: select features
+```{r inspect_features, cache=TRUE}
 script_df <- rbind(script_df, 
                    data.frame(chunk_label="design_models", 
                               chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
@@ -336,15 +357,6 @@ sel_mdl <- mdl_1
 print(sel_mdl)
 print(sel_mdl$finalModel)
 
-print(ggplot(train_df, aes_string(x=feats_tmp_df[1, "feature"], 
-                                   y=feats_tmp_df[2, "feature"],
-                                   color=response_varname)) + 
-          geom_point())
-print(ggplot(train_df, aes_string(x=feats_tmp_df[2, "feature"], 
-                                   y=feats_tmp_df[3, "feature"],
-                                   color=response_varname)) + 
-          geom_point())
-
 ```
 
 ```{r design_models_3_1, cache=TRUE}
@@ -400,12 +412,64 @@ print(confusionMatrix(test_df[, response_varname],
 #print(varImp(train_all_mdl))
 feats_df <- mymerge_varimp(feats_df, train_all_mdl, "train_all_mdl")
 
+# script_df <- rbind(script_df, 
+#                    data.frame(chunk_label="fit_all_obs", 
+#                               chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
+```
+
+The prediction accuracy has marginally increased from `0.9451` (sampled training data fit predicted on validation data) to `0.9837` (all training & validation data fit predicted on testing {holdout sample} data). There's some minor re-ordering of variable importances (e.g. magnet_dumbbell_x moves higher than pitch_forearm).
+
+```{r inspect_test_predictions_1, cache=TRUE}
+response_predict_varname <- paste0(response_varname, ".predict.", "train_all_mdl")
+response_error_varname <- paste0(response_varname, ".error.", "train_all_mdl")
+test_df[, response_predict_varname] <- predict(train_all_mdl, test_df)
+test_df[, response_error_varname] <- 
+    factor((test_df[, response_varname] != test_df[, response_predict_varname]) * 1,
+              labels=c("correct", "error"))
+print(head(test_df[, c("user_name", response_varname, 
+                       response_predict_varname, response_error_varname)]))
+
+feats_top_importance_lst <- 
+    orderBy(~ -train_all_mdl.Importance, data=feats_df)$feature[1:3]
+
+test_plot_df <- test_df
+test_plot_df[, "shape_error"] <- 
+    sapply(test_plot_df[, response_error_varname], 
+           function(err) ifelse((err == "error"), 4, 3))
+
+```
+```{r inspect_test_predictions_2, cache=TRUE}
+png(filename="test_df_scatter_roll_belt_magnet_dumbbell_z.png")
+print(ggplot(test_plot_df, aes_string(x=feats_top_importance_lst[1], 
+                                      y=feats_top_importance_lst[2])) + 
+        geom_point(aes_string(color=response_varname, 
+                              shape="shape_error")) + 
+        scale_shape_identity(guide="legend", name="prediction"
+                             , labels=c("correct", 
+                                        "ignore_1", "ignore_2", "ignore_3", 
+                                        "error")
+                             ) +  
+        facet_wrap(reformulate(response_error_varname)))
+dev.off()
+```
+```{r inspect_test_predictions_3, cache=TRUE}
+png(filename="test_df_scatter_magnet_dumbbell_z_pitch_forearm.png")
+print(ggplot(test_plot_df, aes_string(x=feats_top_importance_lst[2], 
+                                      y=feats_top_importance_lst[3])) + 
+        geom_point(aes_string(color=response_varname, 
+                              shape="shape_error")) + 
+        scale_shape_identity(guide="legend", name="prediction"
+                             , labels=c("correct", 
+                                        "ignore_1", "ignore_2", "ignore_3", 
+                                        "error")
+                             ) +  
+        facet_wrap(reformulate(response_error_varname)))
+dev.off()
+
 script_df <- rbind(script_df, 
                    data.frame(chunk_label="fit_all_obs", 
                               chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
 ```
-
-The prediction accuracy has marginally increased from `0.9451` (sampled training data fit predicted on validation data) to `0.9837` (all training & validation data fit predicted on testing {holdout sample} data). There's some minor re-ordering of variable importances (e.g. magnet_dumbbell_x moves higher than pitch_forearm).
 
 #### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: fit all obs
 ```{r fit_all_train_validate_test, cache=TRUE}
@@ -450,7 +514,7 @@ script_df <- rbind(script_df,
                               chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
 ```
 
-#### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: predict_newdata
+#### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: export_prediction
 ```{r export_prediction, cache=TRUE}
 export_pml_files <- function(x, dir_name) {
 
