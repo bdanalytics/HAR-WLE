@@ -20,9 +20,11 @@ setwd("~/Documents/Work/Courses/Coursera/jhu-datascience/H-Practical-Machine-Lea
 
 #### Model Summary: Random Forests:
 
-Classification results on test data (3,923 obs - 20% of training data) utilizing top 3 important features:
-![](test_df_scatter_roll_belt_magnet_dumbbell_z_save.png)
-![](test_df_scatter_magnet_dumbbell_z_pitch_forearm_save.png)
+Classification results on test data (3,923 obs - 20% of training data) utilizing top 3 important features:  
+Note: could not figure out how to make ggplot2 think there are only 2 possible values for "prediction" - it has to be number (not a factor) because scale_shape_identity() is being used & it is highly probable that ggplot2 wants to make the length of each legend similar ?
+
+![](test_df_scatter_accel_belt_z_accel_dumbbell_y_save.png)
+![](test_df_scatter_accel_belt_z_accel_dumbbell_z_save.png)
 
 #### How you built your model:
 1. Selected Random Forests (rf) since this is a multi-class classification problem & the associated research paper indicated that the original data collectors also utilized this algorithm.
@@ -45,7 +47,7 @@ Classification results on test data (3,923 obs - 20% of training data) utilizing
 2. Sampled observations to optimize model fitting elapsed time vs. validation data prediction accuracy
 
 #### What you think the expected out of sample error is:
-Very low (compared to other machine learning exercises) since the random forests generated near-zero prediction mistakes on the validation data set. Prediction accuracy on testing data was `0.9837`. Therefore, for 100 new observations the model is expected to make atmost ``r round((1 - 0.9837) * 100.0, 0)`` errors. 
+Very low (compared to other machine learning exercises) since the random forests generated near-zero prediction mistakes on the validation data set. Prediction accuracy on testing data was `0.9796`. Therefore, for `100` new observations the model is expected to make atmost ``r round((1 - 0.9796) * 100.0, 0)`` errors. 
 
 #### Why you made the choices you did:
 Explained classification algorithm selection earlier. Most of the effort went into optimizing the trade-offs between fitting time and prediction accuracy.
@@ -335,7 +337,7 @@ print(par_grid)
 
 models_df <- data.frame()
 for (row in 1:nrow(par_grid)) {
-    print(sprintf("row: %d", row))
+    print(sprintf("fitting model for row: %d", row))
     attach(mytrain_model(par_grid[row, ]))
     mdl <- fit_mdl; head(predict(mdl, newdata=validate_df)); #print(mdl)
     models_df <- rbind(models_df, fit_df); #print(models_df)
@@ -363,7 +365,7 @@ models_df <- mutate(models_df, color=ifelse((id == "base"), "black", "NavyBlue")
 #         theme(legend.position="none"))
 print(ggplot(models_df, aes(x=elapsed_ix, y=accuracy_valdt_ix)) +
         geom_point(aes(size=elapsed), color="grey") +   
-        geom_text(aes(label=id, color=color), size=4) + 
+        geom_text(aes(label=id, color=color), size=3) + 
         theme(legend.position="none"))
 ```
 
@@ -382,8 +384,9 @@ par(mar=c(5,0,4,2)) #No margin on the left side
 # the 6 in this code refers to unique(response_varname) + 1 (for OutOfBag)
 legend("top", colnames(sel_mdl$finalModel$err.rate),col=1:6,cex=0.8,fill=1:6)
 
-print(confusionMatrix(validate_df[, response_varname], 
-                      predict(sel_mdl, newdata=validate_df)))
+confMatrix_sel_mdl <- confusionMatrix(validate_df[, response_varname], 
+                                        predict(sel_mdl, newdata=validate_df))
+print(confMatrix_sel_mdl)
 #print(varImp(sel_mdl))
 ```
 
@@ -424,8 +427,7 @@ detach(grep("^mytrain_model", search(), value=TRUE), character.only=TRUE)
 
 print(train_all_mdl)
 print(train_all_mdl$finalModel)
-print(confusionMatrix(test_df[, response_varname], 
-                      predict(train_all_mdl, newdata=test_df)))
+
 #print(varImp(train_all_mdl))
 feats_df <- mymerge_varimp(feats_df, train_all_mdl, "train_all_mdl")
 
@@ -433,8 +435,6 @@ feats_df <- mymerge_varimp(feats_df, train_all_mdl, "train_all_mdl")
 #                    data.frame(chunk_label="fit_all_obs", 
 #                               chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
 ```
-
-The prediction accuracy has marginally increased from `0.9451` (sampled training data fit predicted on validation data) to `0.9837` (all training & validation data fit predicted on testing {holdout sample} data). There's some minor re-ordering of variable importances (e.g. magnet_dumbbell_x moves higher than pitch_forearm).
 
 ```{r inspect_test_predictions_1, cache=TRUE}
 #```{r inspect_test_predictions_1}
@@ -447,6 +447,13 @@ test_df[, response_error_varname] <-
 print(head(test_df[, c("user_name", response_varname, 
                        response_predict_varname, response_error_varname)]))
 
+confMatrix_train_all_mdl <- confusionMatrix(test_df[, response_varname], 
+                                            test_df[, response_predict_varname])
+print(confMatrix_train_all_mdl)
+                                          
+#names(confusionMatrix(test_df[, response_varname], 
+#                      predict(train_all_mdl, newdata=test_df)))
+
 feats_top_importance_lst <- 
     orderBy(~ -train_all_mdl.Importance, data=feats_df)$feature[1:3]
 
@@ -455,43 +462,37 @@ test_plot_df[, "shape_error"] <-
     sapply(test_plot_df[, response_error_varname], 
            function(err) ifelse((err == "error"), 4, 3))
 
+#test_plot_df[, "shape_error"] <- 
+#    sapply(test_plot_df[, response_error_varname], 
+#           function(err) ifelse((err == "error"), factor(4, levels=c(3, 4)), 
+#                                                    factor(3, levels=c(3, 4))))
 ```
+
+The prediction accuracy has marginally increased from ``r format(confMatrix_sel_mdl$overall["Accuracy"], digits=4, nsmall=4)`` (sampled training data fit predicted on validation data) to ``r format(confMatrix_train_all_mdl$overall["Accuracy"], digits=4, nsmall=4)`` (all training & validation data fit predicted on testing {holdout sample} data). 
 
 ```{r inspect_test_predictions_2, cache=TRUE}
 #```{r inspect_test_predictions_2}
-png(filename="test_df_scatter_roll_belt_magnet_dumbbell_z.png")
-#print(ggplot(test_plot_df, aes_string(x=feats_top_importance_lst[1], 
-#                                      y=feats_top_importance_lst[2])) + 
-print(ggplot(test_plot_df, aes_string(x="roll_belt", 
-                                      y="magnet_dumbbell_z")) + 
-        geom_point(aes_string(color=response_varname, 
-                              shape="shape_error"), position="jitter") + 
-        scale_color_brewer(type="qual", palette="Set1") +  
-        scale_shape_identity(guide="legend", name="prediction"
-                             , labels=c("correct", 
-                                        "ignore_1", "ignore_2", "ignore_3", 
-                                        "error")
-                             ) +  
-        facet_wrap(reformulate(response_error_varname)))
-dev.off()
+myplot_predict <- function(x, y) {
+    png(filename=paste0("test_df_scatter_", x, "_", y, ".png"))
+    #print(ggplot(test_plot_df, aes_string(x=feats_top_importance_lst[1], 
+    #                                      y=feats_top_importance_lst[2])) + 
+    print(ggplot(test_plot_df, aes_string(x=x, y=y)) + 
+            geom_point(aes_string(color=response_varname, 
+                                  shape="shape_error"), position="jitter") + 
+            scale_color_brewer(type="qual", palette="Set1") +  
+            scale_shape_identity(guide="legend", name="prediction"
+                                 , labels=c("correct", 
+                                            "ignore_1", "ignore_2", "ignore_3", 
+                                            "error")
+                                 ) +  
+            facet_wrap(reformulate(response_error_varname)))
+    dev.off()    
+}
+myplot_predict(x="accel_belt_z", y="accel_dumbbell_y")
 ```
 ```{r inspect_test_predictions_3, cache=TRUE}
 #```{r inspect_test_predictions_3}
-png(filename="test_df_scatter_magnet_dumbbell_z_pitch_forearm.png")
-#print(ggplot(test_plot_df, aes_string(x=feats_top_importance_lst[2], 
-#                                      y=feats_top_importance_lst[3])) + 
-print(ggplot(test_plot_df, aes_string(x="magnet_dumbbell_z", 
-                                      y="pitch_forearm")) + 
-          geom_point(aes_string(color=response_varname, 
-                              shape="shape_error"), position="jitter") +  
-        scale_color_brewer(type="qual", palette="Set1") +  
-        scale_shape_identity(guide="legend", name="prediction"
-                             , labels=c("correct", 
-                                        "ignore_1", "ignore_2", "ignore_3", 
-                                        "error")
-                             ) +  
-        facet_wrap(reformulate(response_error_varname)))
-dev.off()
+myplot_predict(x="accel_belt_z", y="accel_dumbbell_z")
 
 script_df <- rbind(script_df, 
                    data.frame(chunk_label="fit_all_obs", 
@@ -521,7 +522,7 @@ feats_plot_df$variable_fctr <- factor(feats_plot_df$variable,
                                                "train_all_mdl.Importance",
                                                "entity_all_mdl.Importance"))
 feats_plot_df <- mutate(feats_plot_df, 
-                        feature_tmp = ifelse((variable == "sel_mdl.Importance"), feature, ""))
+                        feature_tmp = ifelse((variable == "entity_all_mdl.Importance"), feature, ""))
 print(ggplot(feats_plot_df, aes(x=response.cor, y=value, group=feature)) +
           geom_point(aes(size=freqRatio, shape=percentUniqueCut_fctr), color="grey") + 
           geom_line(aes(color=variable_fctr)) + 
@@ -531,6 +532,8 @@ script_df <- rbind(script_df,
                    data.frame(chunk_label="predict_newdata", 
                               chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
 ```
+
+There's some re-ordering of variable importances (e.g. accel_belt_z replaces roll_belt as the most important feature).
 
 #### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: predict_newdata
 ```{r predict_newdata, cache=TRUE}
