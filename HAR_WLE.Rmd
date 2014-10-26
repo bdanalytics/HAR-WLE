@@ -28,7 +28,7 @@ Classification results on test data (3,923 obs - 20% of training data) utilizing
 1. Selected Random Forests (rf) since this is a multi-class classification problem & the associated research paper indicated that the original data collectors also utilized this algorithm.
 
 2. Optimized fitting the model (first run on training data took a long time & did not complete):  
-    2.1 Partitioned training data into training & validation data (80% - 20% split - similar to training-testing split)  
+    2.1 Partitioned training data into training (60%), validation (20%) & testing (20%) data 
     2.2 Selected subset of training data - both rows & columns to fit "base" model within 30 elapsed seconds  
     2.3 Identified "base" model parameters such as pre-processing type, sampling method, number of resamples, mtry (rf tuning parameter) etc.  
     2.4 Generated a model parameter grid to vary parameters from the "base" model specifications  
@@ -45,7 +45,7 @@ Classification results on test data (3,923 obs - 20% of training data) utilizing
 2. Sampled observations to optimize model fitting elapsed time vs. validation data prediction accuracy
 
 #### What you think the expected out of sample error is:
-Very low (compared to other machine learning exercises) since the random forests generated near-zero prediction mistakes on the validation data set. Prediction accuracy on testing data was ???. 
+Very low (compared to other machine learning exercises) since the random forests generated near-zero prediction mistakes on the validation data set. Prediction accuracy on testing data was `0.9837`. Therefore, for 100 new observations the model is expected to make ``r round((1 - 0.9837) * 100.0, 0)`` errors. 
 
 #### Why you made the choices you did:
 Explained classification algorithm selection earlier. Most of the effort went into optimizing the trade-offs between fitting time and prediction accuracy.
@@ -53,15 +53,31 @@ Explained classification algorithm selection earlier. Most of the effort went in
 #### Use your prediction model to predict 20 different test cases:
 Brief summary of the prediciton results on new data:
 
+    X   user_name                classe.predict.entity_all_mdl
+1   1     pedro                             B
+2   2    jeremy                             A
+3   3    jeremy                             C
+4   4    adelmo                             A
+5   5    eurico                             A
+6   6    jeremy                             E
+7   7    jeremy                             D
+8   8    jeremy                             B
+9   9  carlitos                             A
+10 10   charles                             A
+11 11  carlitos                             B
+12 12    jeremy                             C
+13 13    eurico                             B
+14 14    jeremy                             A
+15 15    jeremy                             E
+16 16    eurico                             E
+17 17     pedro                             A
+18 18  carlitos                             B
+19 19     pedro                             B
+20 20    eurico                             B
+
 #### Potential next steps include:
 
-1. Plot the final model
-2. Merge variable importance data for key models into feats_df & plot improtance vs. correlation ?
-2. Plot response variable & prediction results against top 2 correlated features for:
-    2.1 The selected "base" model
-    2.2 The "train_all" model
-    2.3 The "train_validate_all" model
-    2.4 The "train_validate_test_all" model
+1. Plot the decision boundaries in the final model (top 2-3 random forest importance variables)
 2. Compress analysis report (please feel free to stop here if you feel that the entire report is too detailed)
 3. Peform PCA pre-processing and select "key" features to make the model more interpretable 
 4. Evaluate other classification algorithms (e.g. SVMs, kNN, etc.) 
@@ -114,7 +130,7 @@ script_df <- rbind(script_df,
 # problem_id:           int:    1:20            [only in predict_df]
 
 #print(summary(entity_df))
-print(summary(predict_df))
+#print(summary(predict_df))
 response_varname <- "classe"
 ```
 Many columns in new data (predict_df) are missing for all records. Let's delete these columns from both training & new datasets to make the analysis faster & easier.
@@ -125,12 +141,12 @@ print("deleting all na cols:")
 print(all_na_cols)
 
 predict_cln_df <- mydelete_cols_df(predict_df, all_na_cols)
-print(summary(predict_cln_df))
+#print(summary(predict_cln_df))
 
 # get rid of the original datasets to save memory
 predict_df <- predict_cln_df
 entity_df <- mydelete_cols_df(entity_df, all_na_cols)
-print(summary(entity_df))
+#print(summary(entity_df))
 
 print(myplot_histogram(entity_df, "classe", fill_col_name="user_name"))
 print(myplot_histogram(predict_df, "user_name", show_stats=FALSE))
