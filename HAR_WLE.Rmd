@@ -28,7 +28,7 @@ Classification results on test data (3,923 obs - 20% of training data) utilizing
 1. Selected Random Forests (rf) since this is a multi-class classification problem & the associated research paper indicated that the original data collectors also utilized this algorithm.
 
 2. Optimized fitting the model (first run on training data took a long time & did not complete):  
-    2.1 Partitioned training data into training (60%), validation (20%) & testing (20%) data 
+    2.1 Partitioned training data into training (64%), validation (16%) & testing (20%) data 
     2.2 Selected subset of training data - both rows & columns to fit "base" model within 30 elapsed seconds  
     2.3 Identified "base" model parameters such as pre-processing type, sampling method, number of resamples, mtry (rf tuning parameter) etc.  
     2.4 Generated a model parameter grid to vary parameters from the "base" model specifications  
@@ -45,7 +45,7 @@ Classification results on test data (3,923 obs - 20% of training data) utilizing
 2. Sampled observations to optimize model fitting elapsed time vs. validation data prediction accuracy
 
 #### What you think the expected out of sample error is:
-Very low (compared to other machine learning exercises) since the random forests generated near-zero prediction mistakes on the validation data set. Prediction accuracy on testing data was `0.9837`. Therefore, for 100 new observations the model is expected to make ``r round((1 - 0.9837) * 100.0, 0)`` errors. 
+Very low (compared to other machine learning exercises) since the random forests generated near-zero prediction mistakes on the validation data set. Prediction accuracy on testing data was `0.9837`. Therefore, for 100 new observations the model is expected to make atmost ``r round((1 - 0.9837) * 100.0, 0)`` errors. 
 
 #### Why you made the choices you did:
 Explained classification algorithm selection earlier. Most of the effort went into optimizing the trade-offs between fitting time and prediction accuracy.
@@ -53,31 +53,31 @@ Explained classification algorithm selection earlier. Most of the effort went in
 #### Use your prediction model to predict 20 different test cases:
 Brief summary of the prediciton results on new data:
 
-    X   user_name                classe.predict.entity_all_mdl
-1   1     pedro                             B
-2   2    jeremy                             A
-3   3    jeremy                             C
-4   4    adelmo                             A
-5   5    eurico                             A
-6   6    jeremy                             E
-7   7    jeremy                             D
-8   8    jeremy                             B
-9   9  carlitos                             A
-10 10   charles                             A
-11 11  carlitos                             B
-12 12    jeremy                             C
-13 13    eurico                             B
-14 14    jeremy                             A
-15 15    jeremy                             E
-16 16    eurico                             E
-17 17     pedro                             A
-18 18  carlitos                             B
-19 19     pedro                             B
-20 20    eurico                             B
+    X   user_name                classe.predict.entity_all_mdl  
+*   1       pedro                             B  
+*   2    jeremy                             A  
+*   3    jeremy                             C  
+*   4    adelmo                             A  
+*   5    eurico                             A  
+*   6    jeremy                             E  
+*   7    jeremy                             D  
+*   8    jeremy                             B  
+*   9  carlitos                             A  
+* 10   charles                             A  
+* 11  carlitos                             B  
+* 12    jeremy                             C  
+* 13    eurico                             B  
+* 14    jeremy                             A  
+* 15    jeremy                             E  
+* 16    eurico                             E  
+* 17     pedro                             A  
+* 18  carlitos                             B  
+* 19     pedro                             B  
+* 20    eurico                             B  
 
 #### Potential next steps include:
 
-1. Plot the decision boundaries in the final model (top 2-3 random forest importance variables)
+1. Plot the decision boundaries (geom_raster / geom_tile ?) in the final model (top 2-3 random forest importance variables)
 2. Compress analysis report (please feel free to stop here if you feel that the entire report is too detailed)
 3. Peform PCA pre-processing and select "key" features to make the model more interpretable 
 4. Evaluate other classification algorithms (e.g. SVMs, kNN, etc.) 
@@ -92,6 +92,7 @@ source("~/Dropbox/datascience/R/myplot.R")
 suppressPackageStartupMessages(require(caret))
 suppressPackageStartupMessages(require(plyr))
 suppressPackageStartupMessages(require(reshape2))
+suppressPackageStartupMessages(require(RColorBrewer))
 
 script_df <- data.frame(chunk_label="import_data", chunk_step_major=1, chunk_step_minor=0)
 ```
@@ -177,7 +178,6 @@ print(summary(entity_df[, nearZeroVars]))
 print(summary(predict_df[, nearZeroVars]))
 
 feats_df <- subset(feats_df, nzv == FALSE)
-names(feats_df)
 ```
 
 Let's add a random variable (my.rnorm) as a feature since some models (e.g. random forests) like a random variable & any model that categorizes this feature as significant would be suspect.
@@ -205,16 +205,18 @@ inValidate <- createDataPartition(y=train_df[, response_varname], p=0.8, list=FA
 train_df <- train_df[inValidate, c(feats_df$feature, response_varname, "user_name")]
 validate_df <- train_df[-inValidate, c(feats_df$feature, response_varname, "user_name")]
 print(table(train_df$classe, train_df$user_name))
+
+# Enhance to print %s of entity instead of raw counts
 print(table(validate_df$classe, validate_df$user_name))
 print(table(test_df$classe, test_df$user_name))
 
 script_df <- rbind(script_df, 
-                   data.frame(chunk_label="select_features", 
+                   data.frame(chunk_label="inspect_features", 
                               chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
 ```
 
-#### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: select features
-```{r select_features, cache=TRUE}
+#### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: inspect features
+```{r inspect_features, cache=TRUE}
 # Compute feature correlations with response to prioritize feature selection for model design
 feats_cor_df <- data.frame( response.cor=cor(train_df[, feats_df$feature], 
                             unclass(train_df[, response_varname])))
@@ -222,11 +224,11 @@ feats_cor_df$response.cor.abs <- abs(feats_cor_df$response.cor)
 feats_cor_df$feature <- rownames(feats_cor_df)
 feats_cor_df <- orderBy(~ -response.cor.abs, data=feats_cor_df)
 
-intersect(names(feats_df), names(feats_cor_df))
+#intersect(names(feats_df), names(feats_cor_df))
 feats_tmp_df <- merge(feats_df, feats_cor_df)
 feats_tmp_df <- orderBy(~ -response.cor.abs, data=feats_tmp_df)
-print(head(feats_tmp_df))
-print(head(feats_cor_df))
+#print(head(feats_tmp_df))
+#print(head(feats_cor_df))
 
 feats_all_df <- feats_tmp_df
 
@@ -234,24 +236,20 @@ feats_all_df <- feats_tmp_df
 feats_df <- subset(feats_all_df, 
     response.cor.abs >= feats_all_df[which(feats_all_df$feature == random_varname),
                                     "response.cor.abs"])
+feats_df <- orderBy(~ - response.cor.abs, feats_df)
 myprint_df(feats_df)
 
-print(ggplot(train_df, aes_string(x=feats_tmp_df[1, "feature"], 
-                                   y=feats_tmp_df[2, "feature"],
-                                   color=response_varname)) + 
-          geom_point())
-print(ggplot(train_df, aes_string(x=feats_tmp_df[1, "feature"], 
-                                   y=feats_tmp_df[3, "feature"],
-                                   color=response_varname)) + 
-          geom_point())
+# Plot subset of points since all points just creates a "waterfall" of the last color in the scale
+train_plot_df <- melt(train_df[createDataPartition(y=train_df[, response_varname], p=0.1, list=FALSE),
+                                c(response_varname, "user_name", feats_df$feature[1:4])],
+                    measure.vars=c(feats_df$feature[2:4]))
+#print(table(train_plot_df[, response_varname]))
+print(ggplot(train_plot_df, aes_string(x=feats_df[1, "feature"], 
+                                        y="value",
+                                  color=response_varname)) + 
+          geom_point(position="jitter") + scale_color_brewer(type="qual", palette="Set1") + 
+          facet_wrap(~ variable, scales="free_y"))
 
-script_df <- rbind(script_df, 
-                   data.frame(chunk_label="inspect_features", 
-                              chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
-```
-
-#### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: select features
-```{r inspect_features, cache=TRUE}
 script_df <- rbind(script_df, 
                    data.frame(chunk_label="design_models", 
                               chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
@@ -436,6 +434,7 @@ feats_df <- mymerge_varimp(feats_df, train_all_mdl, "train_all_mdl")
 The prediction accuracy has marginally increased from `0.9451` (sampled training data fit predicted on validation data) to `0.9837` (all training & validation data fit predicted on testing {holdout sample} data). There's some minor re-ordering of variable importances (e.g. magnet_dumbbell_x moves higher than pitch_forearm).
 
 ```{r inspect_test_predictions_1, cache=TRUE}
+#```{r inspect_test_predictions_1}
 response_predict_varname <- paste0(response_varname, ".predict.", "train_all_mdl")
 response_error_varname <- paste0(response_varname, ".error.", "train_all_mdl")
 test_df[, response_predict_varname] <- predict(train_all_mdl, test_df)
@@ -454,12 +453,17 @@ test_plot_df[, "shape_error"] <-
            function(err) ifelse((err == "error"), 4, 3))
 
 ```
+
 ```{r inspect_test_predictions_2, cache=TRUE}
+#```{r inspect_test_predictions_2}
 png(filename="test_df_scatter_roll_belt_magnet_dumbbell_z.png")
-print(ggplot(test_plot_df, aes_string(x=feats_top_importance_lst[1], 
-                                      y=feats_top_importance_lst[2])) + 
+#print(ggplot(test_plot_df, aes_string(x=feats_top_importance_lst[1], 
+#                                      y=feats_top_importance_lst[2])) + 
+print(ggplot(test_plot_df, aes_string(x="roll_belt", 
+                                      y="magnet_dumbbell_z")) + 
         geom_point(aes_string(color=response_varname, 
-                              shape="shape_error")) + 
+                              shape="shape_error"), position="jitter") + 
+        scale_color_brewer(type="qual", palette="Set1") +  
         scale_shape_identity(guide="legend", name="prediction"
                              , labels=c("correct", 
                                         "ignore_1", "ignore_2", "ignore_3", 
@@ -469,11 +473,15 @@ print(ggplot(test_plot_df, aes_string(x=feats_top_importance_lst[1],
 dev.off()
 ```
 ```{r inspect_test_predictions_3, cache=TRUE}
+#```{r inspect_test_predictions_3}
 png(filename="test_df_scatter_magnet_dumbbell_z_pitch_forearm.png")
-print(ggplot(test_plot_df, aes_string(x=feats_top_importance_lst[2], 
-                                      y=feats_top_importance_lst[3])) + 
-        geom_point(aes_string(color=response_varname, 
-                              shape="shape_error")) + 
+#print(ggplot(test_plot_df, aes_string(x=feats_top_importance_lst[2], 
+#                                      y=feats_top_importance_lst[3])) + 
+print(ggplot(test_plot_df, aes_string(x="magnet_dumbbell_z", 
+                                      y="pitch_forearm")) + 
+          geom_point(aes_string(color=response_varname, 
+                              shape="shape_error"), position="jitter") +  
+        scale_color_brewer(type="qual", palette="Set1") +  
         scale_shape_identity(guide="legend", name="prediction"
                              , labels=c("correct", 
                                         "ignore_1", "ignore_2", "ignore_3", 
