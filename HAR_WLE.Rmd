@@ -345,7 +345,8 @@ for (row in 1:nrow(par_grid)) {
     if (row == 4) mdl_4 <- mdl    
     if (row == 5) mdl_5 <- mdl    
     if (row == 6) mdl_6 <- mdl    
-    if (row == 7) mdl_7 <- mdl    
+    if (row == 7) mdl_7 <- mdl
+    detach(grep("^mytrain_model", search(), value=TRUE), character.only=TRUE)
 }
 
 ```
@@ -356,7 +357,7 @@ models_df$id <- rownames(models_df)
 models_df$accuracy_valdt_ix <- models_df$accuracy_valdt * 100.0 / models_df$accuracy_valdt[1]
 models_df$elapsed_ix <- models_df$elapsed * 100.0 / models_df$elapsed[1]
 models_df <- mutate(models_df, color=ifelse((id == "base"), "black", "NavyBlue"))
-print(orderBy(~ - elapsed_ix + accuracy_valdt_ix, data=models_df))
+#print(orderBy(~ - elapsed_ix + accuracy_valdt_ix, data=models_df))
 # print(myplot_scatter(models_df, "elapsed_ix", "accuracy_valdt_ix") + 
 #         geom_text(aes(label=id, color=color), size=3) + 
 #         theme(legend.position="none"))
@@ -418,7 +419,9 @@ par_row <- par_grid[1, ]; par_row$mdl_name <- 'train_all'; par_row$p_obs <- 1.0;
 print(par_row)
 
 attach(mytrain_model(par_row, fit_df=rbind(train_df, validate_df)))
-train_all_mdl <- fit_mdl; 
+train_all_mdl <- fit_mdl;
+detach(grep("^mytrain_model", search(), value=TRUE), character.only=TRUE)
+
 print(train_all_mdl)
 print(train_all_mdl$finalModel)
 print(confusionMatrix(test_df[, response_varname], 
@@ -502,6 +505,8 @@ print(par_row)
 
 attach(mytrain_model(par_row, fit_df=entity_df))
 entity_all_mdl <- fit_mdl; 
+detach(grep("^mytrain_model", search(), value=TRUE), character.only=TRUE)
+
 print(entity_all_mdl)
 print(entity_all_mdl$finalModel)
 #print(confusionMatrix(test_df[, response_varname], 

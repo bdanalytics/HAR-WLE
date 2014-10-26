@@ -518,93 +518,16 @@ for (row in 1:nrow(par_grid)) {
     if (row == 4) mdl_4 &lt;- mdl    
     if (row == 5) mdl_5 &lt;- mdl    
     if (row == 6) mdl_6 &lt;- mdl    
-    if (row == 7) mdl_7 &lt;- mdl    
+    if (row == 7) mdl_7 &lt;- mdl
+    detach(grep(&quot;^mytrain_model&quot;, search(), value=TRUE), character.only=TRUE)
 }</code></pre>
 <pre><code>## [1] &quot;row: 1&quot;
-## [1] &quot;row: 2&quot;</code></pre>
-<pre><code>## The following objects are masked from mytrain_model(par_grid[row, ]) (pos = 3):
-## 
-##     fit_df, fit_mdl</code></pre>
-<pre><code>## [1] &quot;row: 3&quot;</code></pre>
-<pre><code>## The following objects are masked from mytrain_model(par_grid[row, ]) (pos = 3):
-## 
-##     fit_df, fit_mdl
-## 
-## The following objects are masked from mytrain_model(par_grid[row, ]) (pos = 4):
-## 
-##     fit_df, fit_mdl</code></pre>
-<pre><code>## [1] &quot;row: 4&quot;</code></pre>
-<pre><code>## The following objects are masked from mytrain_model(par_grid[row, ]) (pos = 3):
-## 
-##     fit_df, fit_mdl
-## 
-## The following objects are masked from mytrain_model(par_grid[row, ]) (pos = 4):
-## 
-##     fit_df, fit_mdl
-## 
-## The following objects are masked from mytrain_model(par_grid[row, ]) (pos = 5):
-## 
-##     fit_df, fit_mdl</code></pre>
-<pre><code>## [1] &quot;row: 5&quot;</code></pre>
-<pre><code>## The following objects are masked from mytrain_model(par_grid[row, ]) (pos = 3):
-## 
-##     fit_df, fit_mdl
-## 
-## The following objects are masked from mytrain_model(par_grid[row, ]) (pos = 4):
-## 
-##     fit_df, fit_mdl
-## 
-## The following objects are masked from mytrain_model(par_grid[row, ]) (pos = 5):
-## 
-##     fit_df, fit_mdl
-## 
-## The following objects are masked from mytrain_model(par_grid[row, ]) (pos = 6):
-## 
-##     fit_df, fit_mdl</code></pre>
-<pre><code>## [1] &quot;row: 6&quot;</code></pre>
-<pre><code>## The following objects are masked from mytrain_model(par_grid[row, ]) (pos = 3):
-## 
-##     fit_df, fit_mdl
-## 
-## The following objects are masked from mytrain_model(par_grid[row, ]) (pos = 4):
-## 
-##     fit_df, fit_mdl
-## 
-## The following objects are masked from mytrain_model(par_grid[row, ]) (pos = 5):
-## 
-##     fit_df, fit_mdl
-## 
-## The following objects are masked from mytrain_model(par_grid[row, ]) (pos = 6):
-## 
-##     fit_df, fit_mdl
-## 
-## The following objects are masked from mytrain_model(par_grid[row, ]) (pos = 7):
-## 
-##     fit_df, fit_mdl</code></pre>
-<pre><code>## [1] &quot;row: 7&quot;</code></pre>
-<pre><code>## The following objects are masked from mytrain_model(par_grid[row, ]) (pos = 3):
-## 
-##     fit_df, fit_mdl
-## 
-## The following objects are masked from mytrain_model(par_grid[row, ]) (pos = 4):
-## 
-##     fit_df, fit_mdl
-## 
-## The following objects are masked from mytrain_model(par_grid[row, ]) (pos = 5):
-## 
-##     fit_df, fit_mdl
-## 
-## The following objects are masked from mytrain_model(par_grid[row, ]) (pos = 6):
-## 
-##     fit_df, fit_mdl
-## 
-## The following objects are masked from mytrain_model(par_grid[row, ]) (pos = 7):
-## 
-##     fit_df, fit_mdl
-## 
-## The following objects are masked from mytrain_model(par_grid[row, ]) (pos = 8):
-## 
-##     fit_df, fit_mdl</code></pre>
+## [1] &quot;row: 2&quot;
+## [1] &quot;row: 3&quot;
+## [1] &quot;row: 4&quot;
+## [1] &quot;row: 5&quot;
+## [1] &quot;row: 6&quot;
+## [1] &quot;row: 7&quot;</code></pre>
 <pre class="r"><code>#```{r design_models_2}
 models_df$id &lt;- rownames(models_df)
 models_df$accuracy_valdt_ix &lt;- models_df$accuracy_valdt * 100.0 / models_df$accuracy_valdt[1]
@@ -764,7 +687,9 @@ print(par_row)</code></pre>
 <pre><code>##    mdl_name num_feats p_obs preProcess sampling_method n_resample mtry
 ## 1 train_all        25     1       NULL              cv         10    3</code></pre>
 <pre class="r"><code>attach(mytrain_model(par_row, fit_df=rbind(train_df, validate_df)))
-train_all_mdl &lt;- fit_mdl; 
+train_all_mdl &lt;- fit_mdl;
+detach(grep(&quot;^mytrain_model&quot;, search(), value=TRUE), character.only=TRUE)
+
 print(train_all_mdl)</code></pre>
 <pre><code>## Random Forest 
 ## 
@@ -918,11 +843,10 @@ dev.off()</code></pre>
 print(par_row)</code></pre>
 <pre><code>##     mdl_name num_feats p_obs preProcess sampling_method n_resample mtry
 ## 1 entity_all        25     1       NULL              cv         10    3</code></pre>
-<pre class="r"><code>attach(mytrain_model(par_row, fit_df=entity_df))</code></pre>
-<pre><code>## The following objects are masked from mytrain_model(par_row, fit_df = rbind(train_df, validate_df)):
-## 
-##     fit_df, fit_mdl</code></pre>
-<pre class="r"><code>entity_all_mdl &lt;- fit_mdl; 
+<pre class="r"><code>attach(mytrain_model(par_row, fit_df=entity_df))
+entity_all_mdl &lt;- fit_mdl; 
+detach(grep(&quot;^mytrain_model&quot;, search(), value=TRUE), character.only=TRUE)
+
 print(entity_all_mdl)</code></pre>
 <pre><code>## Random Forest 
 ## 
@@ -1048,15 +972,16 @@ print(predict_df[, c(&quot;X&quot;, &quot;user_name&quot;, response_predict_varn
 ## 
 ## loaded via a namespace (and not attached):
 ##  [1] BradleyTerry2_1.0-5 brglm_0.5-9         car_2.0-21         
-##  [4] codetools_0.2-9     colorspace_1.2-4    digest_0.6.4       
-##  [7] evaluate_0.5.5      foreach_1.4.2       formatR_1.0        
-## [10] grid_3.1.1          gtable_0.1.2        gtools_3.4.1       
-## [13] htmltools_0.2.4     iterators_1.0.7     knitr_1.7          
-## [16] labeling_0.3        lme4_1.1-7          Matrix_1.1-4       
-## [19] minqa_1.2.3         munsell_0.4.2       nlme_3.1-117       
-## [22] nloptr_1.0.4        nnet_7.3-8          proto_0.3-10       
-## [25] Rcpp_0.11.2         rmarkdown_0.2.54    scales_0.2.4       
-## [28] stringr_0.6.2       tools_3.1.1         yaml_2.1.13</code></pre>
+##  [4] class_7.3-11        codetools_0.2-9     colorspace_1.2-4   
+##  [7] compiler_3.1.1      digest_0.6.4        e1071_1.6-4        
+## [10] evaluate_0.5.5      foreach_1.4.2       formatR_1.0        
+## [13] grid_3.1.1          gtable_0.1.2        gtools_3.4.1       
+## [16] htmltools_0.2.4     iterators_1.0.7     knitr_1.7          
+## [19] labeling_0.3        lme4_1.1-7          Matrix_1.1-4       
+## [22] minqa_1.2.3         munsell_0.4.2       nlme_3.1-117       
+## [25] nloptr_1.0.4        nnet_7.3-8          proto_0.3-10       
+## [28] Rcpp_0.11.2         rmarkdown_0.2.54    scales_0.2.4       
+## [31] stringr_0.6.2       tools_3.1.1         yaml_2.1.13</code></pre>
 </div>
 </div>
 
