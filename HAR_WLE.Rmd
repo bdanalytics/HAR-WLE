@@ -489,6 +489,163 @@ myplot_predict <- function(x, y) {
     dev.off()    
 }
 myplot_predict(x="accel_belt_z", y="accel_dumbbell_y")
+
+myplot_predict_tile <- function(x, y) {
+    test_medians_df <- mycompute_medians_df(test_df[ , feats_df$feature], keep.names=TRUE)
+    
+    #x <- "accel_belt_z"; y <- "accel_dumbbell_y"
+    decbndry_grid <- expand.grid(x=seq(min(test_df[ ,x]), max(test_df[ ,x]), length=100),
+                                 y=seq(min(test_df[ ,y]), max(test_df[ ,y]), length=100))
+    test_decbndry_df <- test_medians_df
+    test_decbndry_df[2:nrow(decbndry_grid), ] <- test_decbndry_df[1, ]
+    test_decbndry_df[, x] <- decbndry_grid$x
+    test_decbndry_df[, y] <- decbndry_grid$y
+    test_decbndry_df[, response_predict_varname] <- predict(train_all_mdl, test_decbndry_df)
+    
+    print(ggplot(test_decbndry_df, aes_string(x=x, y=y)) + 
+              geom_tile(aes_string(fill=response_predict_varname)) + 
+              scale_fill_brewer(type="qual", palette="Set1"))
+    
+    print(ggplot(test_decbndry_df, aes_string(x=x, y=y)) + 
+              geom_tile(aes_string(fill=response_predict_varname), alpha=0.5) + 
+              scale_fill_brewer(type="qual", palette="Set1") + 
+              geom_point(data=test_plot_df, 
+                         mapping=aes_string(color=response_varname, 
+                                            shape="shape_error"), position="jitter") + 
+              scale_color_brewer(type="qual", palette="Set1") + 
+              scale_shape_identity(guide="legend", name="prediction", 
+                                   labels=c("correct", 
+                                            "ignore_1", "ignore_2", "ignore_3", 
+                                            "error")) + 
+              facet_wrap(reformulate(response_error_varname)))
+}
+myplot_predict_tile(x="accel_belt_z", y="accel_dumbbell_y")
+myplot_predict_tile(x="accel_belt_z", y="accel_dumbbell_z")
+myplot_predict_tile(x="accel_dumbbell_y", y="accel_dumbbell_z")
+
+# begin SVD vs. PCA comparison
+test_svd_lst <- svd(scale(test_df[, feats_df$feature]))
+test_svd_u_df <- data.frame(test_svd_lst$u)
+test_svd_d_df <- data.frame(test_svd_lst$d)
+test_svd_v_df <- data.frame(test_svd_lst$v)
+test_svd_vt_df <- data.frame(t(test_svd_lst$v))
+print(sprintf("dim X: %s", toString(dim(test_df[, feats_df$feature]))))
+print(sprintf("dim SVD_U: %s", toString(dim(test_svd_u_df))))
+print(sprintf("dim SVD_D: %s", toString(dim(test_svd_d_df))))
+print(sprintf("dim SVD_V: %s", toString(dim(test_svd_v_df))))
+
+test_prcomp_lst <- prcomp(test_df[, feats_df$feature], scale=TRUE)
+test_prcomp_x_df <- data.frame(test_prcomp_lst$x)
+test_prcomp_r_df <- data.frame(test_prcomp_lst$rotation)
+print(sprintf("dim PCA_U: %s", toString(dim(test_prcomp_x_df))))
+print(sprintf("dim PCA_R: %s", toString(dim(test_prcomp_r_df))))
+
+names(test_svd_v_df) <- names(test_prcomp_r_df)
+row.names(test_svd_v_df) <- row.names(test_prcomp_r_df)
+all.equal(test_svd_v_df, test_prcomp_r_df)
+
+test_svd_d_mx <- diag(nrow(test_svd_d_df))
+test_svd_d_mx[row(test_svd_d_mx) == col(test_svd_d_mx)] <- test_svd_d_df[, 1]
+test_svd_ud_df <- data.frame(as.matrix(test_svd_u_df) %*% test_svd_d_mx)
+row.names(test_svd_ud_df) <- row.names(test_prcomp_x_df)
+names(test_svd_ud_df) <- names(test_prcomp_x_df)
+all.equal(test_svd_ud_df, test_prcomp_x_df)
+
+all.equal(test_svd_v_df, test_prcomp_r_df)
+
+all.equal(data.frame(predict(test_prcomp_lst, newdata=test_df)), test_prcomp_x_df)
+
+test_prcomp_drvd_df <- data.frame(as.matrix(test_prcomp_x_df) %*% as.matrix(test_prcomp_r_df))
+names(test_prcomp_drvd_df) <- names(test_df[, feats_df$feature])
+test_scaled_df <- data.frame(scale(test_df[, feats_df$feature]))
+test_scaled_df$row_id <- row.names(test_df)
+test_prcomp_drvd_df$row_id <- row.names(test_df)
+test_df$row_pos <- seq(1:nrow(test_df))
+test_scaled_df$row_pos <- seq(1:nrow(test_df))
+test_prcomp_drvd_df$row_pos <- seq(1:nrow(test_df))
+all.equal(test_scaled_df, test_prcomp_drvd_df)
+
+plot_df <- merge(test_scaled_df[, c("row_pos", "gyros_belt_y")], 
+                test_prcomp_drvd_df[, c("row_pos", "gyros_belt_y")],
+                by="row_pos", suffixes=c(".scaled", ".prcomp_drvd"))
+plot2_df <- merge(plot_df, test_df[, c("row_pos", "gyros_belt_y")])
+head(plot2_df)
+plot_df <- orderBy(~ row_pos, plot2_df)
+row.names(plot_df) <- row.names(test_df)
+plot_df$row_id <- row.names(test_df)
+head(plot_df)
+ggplot(plot_df, aes(x=gyros_belt_y, y=gyros_belt_y.scaled)) + 
+    geom_point()
+ggplot(plot_df, aes(x=gyros_belt_y.scaled, y=gyros_belt_y.prcomp_drvd)) + 
+    geom_point()
+
+# end comparison
+
+myplot_predict_tile_prcomp <- function(x, y) {
+    test_prcomp_x_medians_df <- mycompute_medians_df(test_prcomp_x_df, keep.names=TRUE)
+    
+    #x <- "PC1"; y <- "PC2"
+    decbndry_grid <- expand.grid(x=seq(min(test_prcomp_x_df[ ,x]), max(test_prcomp_x_df[ ,x]), length=100),
+                                 y=seq(min(test_prcomp_x_df[ ,y]), max(test_prcomp_x_df[ ,y]), length=100))
+    test_decbndry_df <- test_prcomp_x_medians_df
+    test_decbndry_df[2:nrow(decbndry_grid), ] <- test_decbndry_df[1, ]
+    test_decbndry_df[, x] <- decbndry_grid$x
+    test_decbndry_df[, y] <- decbndry_grid$y
+    test_decbndry_df[, response_predict_varname] <- predict(train_all_mdl, test_decbndry_df)
+    
+    print(ggplot(test_decbndry_df, aes_string(x=x, y=y)) + 
+              geom_tile(aes_string(fill=response_predict_varname)) + 
+              scale_fill_brewer(type="qual", palette="Set1"))
+    
+    print(ggplot(test_decbndry_df, aes_string(x=x, y=y)) + 
+              geom_tile(aes_string(fill=response_predict_varname), alpha=0.5) + 
+              scale_fill_brewer(type="qual", palette="Set1") + 
+              geom_point(data=test_plot_df, 
+                         mapping=aes_string(color=response_varname, 
+                                            shape="shape_error"), position="jitter") + 
+              scale_color_brewer(type="qual", palette="Set1") + 
+              scale_shape_identity(guide="legend", name="prediction", 
+                                   labels=c("correct", 
+                                            "ignore_1", "ignore_2", "ignore_3", 
+                                            "error")) + 
+              facet_wrap(reformulate(response_error_varname)))
+}
+myplot_predict_tile(x="accel_belt_z", y="accel_dumbbell_y")
+myplot_predict_tile(x="accel_belt_z", y="accel_dumbbell_z")
+myplot_predict_tile(x="accel_dumbbell_y", y="accel_dumbbell_z")
+
+myplot_predict_tile3d <- function(x, y, z) {
+    test_medians_df <- mycompute_medians_df(test_df[ , feats_df$feature], keep.names=TRUE)
+    
+    #x <- "accel_belt_z"; y <- "accel_dumbbell_y"
+    decbndry_grid <- expand.grid(x=seq(min(test_df[ ,x]), max(test_df[ ,x]), length=10),
+                                 y=seq(min(test_df[ ,y]), max(test_df[ ,y]), length=10),
+                                 z=seq(min(test_df[ ,y]), max(test_df[ ,y]), length=10))
+    test_decbndry_df <- test_medians_df
+    test_decbndry_df[2:nrow(decbndry_grid), ] <- test_decbndry_df[1, ]
+    test_decbndry_df[, x] <- decbndry_grid$x
+    test_decbndry_df[, y] <- decbndry_grid$y
+    test_decbndry_df[, z] <- decbndry_grid$z
+    test_decbndry_df[, response_predict_varname] <- predict(train_all_mdl, test_decbndry_df)
+    
+    print(ggplot(test_decbndry_df, aes_string(x=x, y=y)) + 
+              geom_tile(aes_string(fill=response_predict_varname)) + 
+              scale_fill_brewer(type="qual", palette="Set1"))
+    
+    print(ggplot(test_decbndry_df, aes_string(x=x, y=y)) + 
+              geom_tile(aes_string(fill=response_predict_varname), alpha=0.5) + 
+              scale_fill_brewer(type="qual", palette="Set1") + 
+              geom_point(data=test_plot_df, 
+                         mapping=aes_string(color=response_varname, 
+                                            shape="shape_error"), position="jitter") + 
+              scale_color_brewer(type="qual", palette="Set1") + 
+              scale_shape_identity(guide="legend", name="prediction", 
+                                   labels=c("correct", 
+                                            "ignore_1", "ignore_2", "ignore_3", 
+                                            "error")) + 
+              facet_wrap(reformulate(response_error_varname)))
+}
+myplot_predict_tile3d(x="accel_belt_z", y="accel_dumbbell_y", z="accel_dumbbell_z")
 ```
 ```{r inspect_test_predictions_3, cache=TRUE}
 #```{r inspect_test_predictions_3}
