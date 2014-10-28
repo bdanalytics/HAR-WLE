@@ -201,13 +201,14 @@ script_df <- rbind(script_df,
 ```{r partition_data, cache=TRUE}
 print(table(entity_df[, response_varname], entity_df$user_name))
 
+id_varnames <- c("user_name", "X")
 inTrain <- createDataPartition(y=entity_df[, response_varname], p=0.8, list=FALSE)
-train_df <- entity_df[inTrain, c(feats_df$feature, response_varname, "user_name")]
-test_df <- entity_df[-inTrain, c(feats_df$feature, response_varname, "user_name")]
+train_df <- entity_df[inTrain, c(feats_df$feature, response_varname, id_varnames)]
+test_df <- entity_df[-inTrain, c(feats_df$feature, response_varname, id_varnames)]
 
 inValidate <- createDataPartition(y=train_df[, response_varname], p=0.8, list=FALSE)
-train_df <- train_df[inValidate, c(feats_df$feature, response_varname, "user_name")]
-validate_df <- train_df[-inValidate, c(feats_df$feature, response_varname, "user_name")]
+train_df <- train_df[inValidate, c(feats_df$feature, response_varname, id_varnames)]
+validate_df <- train_df[-inValidate, c(feats_df$feature, response_varname, id_varnames)]
 print(table(train_df$classe, train_df$user_name))
 
 # Enhance to print %s of entity instead of raw counts
@@ -253,6 +254,46 @@ print(ggplot(train_plot_df, aes_string(x=feats_df[1, "feature"],
                                   color=response_varname)) + 
           geom_point(position="jitter") + scale_color_brewer(type="qual", palette="Set1") + 
           facet_wrap(~ variable, scales="free_y"))
+
+# check feature distribution type
+feats_df <- orderBy(~ - response.cor.abs, feats_df)
+#feats_df[1, "shapiro.test.W"] <- shapiro.test(sample(train_df[, feats_df$feature[1]], size=5000))$statistic
+feats_df$shapiro.test.W <- sapply(feats_df$feature, 
+    function(feat) shapiro.test(sample(train_df[, feat], size=5000))$statistic)
+
+feats_plot_df <- mutate(feats_df, 
+                feature_label = ifelse((shapiro.test.W < 0.75), feature, ""))
+print(ggplot(feats_plot_df, aes(x=response.cor, y=shapiro.test.W)) + 
+          geom_point(position="jitter") + 
+          geom_text(aes(label=feature_label), color="slategrey"))
+
+# check distributions in entire data (incl. test) for outliers that might be 
+#   distorting the distributions
+entity_plot_df <- 
+    melt(entity_df[, c(id_varnames, "my.rnorm", 
+                       "gyros_forearm_x", "gyros_forearm_y", "gyros_forearm_z")],
+         id.vars=id_varnames)
+entity_plot_df <- mutate(entity_plot_df, 
+    X_label = ifelse((  ((variable == "gyros_forearm_x") & (value < -5)) | 
+                        ((variable == "gyros_forearm_y") & (value >  5)) | 
+                        ((variable == "gyros_forearm_z") & (value >  5))), 
+                        X, ""))
+entity_plot_df <- merge(entity_plot_df, 
+                        feats_df[, c("feature", "response.cor")], 
+                        by.x="variable", by.y="feature", all.y=FALSE)
+print(ggplot(entity_plot_df, aes(x=factor(0), y=value)) + 
+          geom_violin(aes(fill=response.cor)) + 
+          geom_text(aes(label=X_label), color="slategrey", size=3) + 
+          facet_wrap(~ variable, scales="free_y") + xlab(""))
+
+myprint_df(feats_df)
+
+print("Suspect data:")
+print(entity_df[entity_df$X == 5373,])
+
+# Make the suspect data missing & impute missing data & compare to original data
+#   to verify that this might be a data entry error
+
 
 script_df <- rbind(script_df, 
                    data.frame(chunk_label="design_models", 
