@@ -23,8 +23,9 @@ setwd("~/Documents/Work/Courses/Coursera/jhu-datascience/H-Practical-Machine-Lea
 Classification results on test data (3,923 obs - 20% of training data) utilizing top 3 important features:  
 Note: could not figure out how to make ggplot2 think there are only 2 possible values for "prediction" - it has to be number (not a factor) because scale_shape_identity() is being used & it is highly probable that ggplot2 wants to make the length of each legend similar ?
 
-![](test_df_scatter_accel_belt_z_accel_dumbbell_y_save.png)
-![](test_df_scatter_accel_belt_z_accel_dumbbell_z_save.png)
+![](test_decbndry_accel_belt_z_accel_dumbbell_y_save.png)
+![](test_decbndry_accel_belt_z_accel_dumbbell_z_save.png)
+![](test_decbndry_accel_dumbbell_y_accel_dumbbell_z_save.png)
 
 #### How you built your model:
 1. Selected Random Forests (rf) since this is a multi-class classification problem & the associated research paper indicated that the original data collectors also utilized this algorithm.
@@ -79,7 +80,8 @@ Brief summary of the prediciton results on new data:
 
 #### Potential next steps include:
 
-1. Plot the decision boundaries (geom_raster / geom_tile ?) in the final model (top 2-3 random forest importance variables)
+0. Feature distribution checks
+1. Dummy Classifer
 2. Compress analysis report (please feel free to stop here if you feel that the entire report is too detailed)
 3. Peform PCA pre-processing and select "key" features to make the model more interpretable 
 4. Evaluate other classification algorithms (e.g. SVMs, kNN, etc.) 
@@ -488,11 +490,47 @@ myplot_predict <- function(x, y) {
             facet_wrap(reformulate(response_error_varname)))
     dev.off()    
 }
-myplot_predict(x="accel_belt_z", y="accel_dumbbell_y")
+#myplot_predict(x="accel_belt_z", y="accel_dumbbell_y")
+
+myplot_predict_tile <- function(x, y) {
+    test_medians_df <- mycompute_medians_df(test_df[ , feats_df$feature], keep.names=TRUE)
+    
+    #x <- "accel_belt_z"; y <- "accel_dumbbell_y"
+    decbndry_grid <- expand.grid(x=seq(min(test_df[ ,x]), max(test_df[ ,x]), length=100),
+                                 y=seq(min(test_df[ ,y]), max(test_df[ ,y]), length=100))
+    test_decbndry_df <- test_medians_df
+    test_decbndry_df[2:nrow(decbndry_grid), ] <- test_decbndry_df[1, ]
+    test_decbndry_df[, x] <- decbndry_grid$x
+    test_decbndry_df[, y] <- decbndry_grid$y
+    test_decbndry_df[, response_predict_varname] <- predict(train_all_mdl, test_decbndry_df)
+    
+    print(ggplot(test_decbndry_df, aes_string(x=x, y=y)) + 
+              geom_tile(aes_string(fill=response_predict_varname)) + 
+              scale_fill_brewer(type="qual", palette="Set1"))
+    
+    png(filename=paste0("test_decbndry_", x, "_", y, ".png"), width=960, height=960)
+    print(ggplot(test_decbndry_df, aes_string(x=x, y=y)) + 
+              geom_tile(aes_string(fill=response_predict_varname), alpha=0.5) + 
+              scale_fill_brewer(type="qual", palette="Set1") + 
+              geom_point(data=test_plot_df, 
+                         mapping=aes_string(color=response_varname, 
+                                            shape="shape_error"), position="jitter") + 
+              scale_color_brewer(type="qual", palette="Set1") + 
+              scale_shape_identity(guide="legend", name="prediction", 
+                                   labels=c("correct", 
+                                            "ignore_1", "ignore_2", "ignore_3", 
+                                            "error")) + 
+              facet_wrap(reformulate(response_error_varname)))
+    dev.off()
+}
+myplot_predict_tile(x="accel_belt_z", y="accel_dumbbell_y")
+myplot_predict_tile(x="accel_belt_z", y="accel_dumbbell_z")
+myplot_predict_tile(x="accel_dumbbell_y", y="accel_dumbbell_z")
 ```
+
 ```{r inspect_test_predictions_3, cache=TRUE}
 #```{r inspect_test_predictions_3}
-myplot_predict(x="accel_belt_z", y="accel_dumbbell_z")
+#myplot_predict(x="accel_belt_z", y="accel_dumbbell_z")
 
 script_df <- rbind(script_df, 
                    data.frame(chunk_label="fit_all_obs", 
