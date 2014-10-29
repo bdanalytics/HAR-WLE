@@ -136,6 +136,7 @@ script_df <- rbind(script_df,
 
 #print(summary(entity_df))
 #print(summary(predict_df))
+id_varnames <- c("user_name", "X")
 response_varname <- "classe"
 ```
 Many columns in new data (predict_df) are missing for all records. Let's delete these columns from both training & new datasets to make the analysis faster & easier.
@@ -168,7 +169,7 @@ features_lst <- names(predict_df)
 
 # Remove features that are not relevant for modeling
 features_lst <- features_lst[!(features_lst %in% 
-                                c("X", "user_name", "problem_id"))]
+                                c(id_varnames, "problem_id"))]
 features_lst <- features_lst[!(features_lst %in% 
                                 grep("timestamp", features_lst, value=TRUE))]
 
@@ -192,16 +193,19 @@ predict_df$my.rnorm <- rnorm(nrow(predict_df))
 entity_df$my.rnorm <- rnorm(nrow(entity_df))
 feats_df[nrow(feats_df) + 1, "feature"] <- random_varname
 
+# Since some steps might need to be re-run:
+feats_save_df <- feats_df
+
 script_df <- rbind(script_df, 
                    data.frame(chunk_label="partition_data", 
                               chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
 ```
 
 #### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: partition data
-```{r partition_data, cache=TRUE}
+```{r partition_data}
+#```{r partition_data, cache=TRUE}
 print(table(entity_df[, response_varname], entity_df$user_name))
 
-id_varnames <- c("user_name", "X")
 inTrain <- createDataPartition(y=entity_df[, response_varname], p=0.8, list=FALSE)
 train_df <- entity_df[inTrain, c(feats_df$feature, response_varname, id_varnames)]
 test_df <- entity_df[-inTrain, c(feats_df$feature, response_varname, id_varnames)]
@@ -215,13 +219,14 @@ print(table(train_df$classe, train_df$user_name))
 print(table(validate_df$classe, validate_df$user_name))
 print(table(test_df$classe, test_df$user_name))
 
+if (!("inspect_features" %in% script_df$chunk_label))
 script_df <- rbind(script_df, 
                    data.frame(chunk_label="inspect_features", 
                               chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
 ```
 
 #### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: inspect features
-```{r inspect_features, cache=TRUE}
+```{r inspect_features}
 # Compute feature correlations with response to prioritize feature selection for model design
 feats_cor_df <- data.frame( response.cor=cor(train_df[, feats_df$feature], 
                             unclass(train_df[, response_varname])))
@@ -230,6 +235,7 @@ feats_cor_df$feature <- rownames(feats_cor_df)
 feats_cor_df <- orderBy(~ -response.cor.abs, data=feats_cor_df)
 
 #intersect(names(feats_df), names(feats_cor_df))
+feats_df <- feats_save_df
 feats_tmp_df <- merge(feats_df, feats_cor_df)
 feats_tmp_df <- orderBy(~ -response.cor.abs, data=feats_tmp_df)
 #print(head(feats_tmp_df))
@@ -265,7 +271,7 @@ feats_plot_df <- mutate(feats_df,
                 feature_label = ifelse((shapiro.test.W < 0.75), feature, ""))
 print(ggplot(feats_plot_df, aes(x=response.cor, y=shapiro.test.W)) + 
           geom_point(position="jitter") + 
-          geom_text(aes(label=feature_label), color="slategrey"))
+          geom_text(aes(label=feature_label), color="slategrey", size=3))
 
 # check distributions in entire data (incl. test) for outliers that might be 
 #   distorting the distributions
@@ -287,14 +293,73 @@ print(ggplot(entity_plot_df, aes(x=factor(0), y=value)) +
           facet_wrap(~ variable, scales="free_y") + xlab(""))
 
 myprint_df(feats_df)
+```
 
+```{r inspect_features_1, cache=TRUE}
 print("Suspect data:")
 print(entity_df[entity_df$X == 5373,])
 
 # Make the suspect data missing & impute missing data & compare to original data
 #   to verify that this might be a data entry error
+entity_tmp_df <- entity_df
+entity_tmp_df[entity_tmp_df$X == 5373, 
+              c("gyros_forearm_x", "gyros_forearm_y", "gyros_forearm_z")] <- NA
+print(entity_tmp_df[entity_tmp_df$X == 5373, ])
 
+preProc_lst <- preProcess(entity_tmp_df[, feats_df$feature], method=c("knnImpute"), verbose=TRUE)
+print(preProc_lst)
+entity_preProc_std_df <- data.frame(matrix(preProc_lst$std, nrow=1, 
+                                           ncol=length(preProc_lst$std), 
+                                           dimnames=list("std", names(preProc_lst$std))))
+print(entity_preProc_std_df)
+entity_preProc_mean_df <- data.frame(matrix(preProc_lst$mean, nrow=1, 
+                                           ncol=length(preProc_lst$mean), 
+                                           dimnames=list("mean", names(preProc_lst$mean))))
+print(entity_preProc_mean_df)
 
+# entity_preProc_df <- data.frame(preProc_lst$data)
+# all.equal(entity_preProc_df, entity_tmp_df[, feats_df$feature])
+require(RANN)
+entity_preProc_df <- predict(preProc_lst, entity_tmp_df[, feats_df$feature], verbose=TRUE)
+entity_invProc_df <- entity_preProc_df
+# entity_invProc_df[, "accel_arm_x"] <- (entity_preProc_df[, "accel_arm_x"] * 
+#                                     entity_preProc_std_df[1, "accel_arm_x"]) + 
+#                                     entity_preProc_mean_df[1, "accel_arm_x"]
+for (feat in feats_df$feature)
+    entity_invProc_df[, feat] <- (entity_preProc_df[, feat] * 
+                                entity_preProc_std_df[1, feat]) + 
+                                entity_preProc_mean_df[1, feat]
+entity_invProc_df[, id_varnames] <- entity_df[, id_varnames]
+#all.equal(entity_invProc_df[, "accel_arm_x"], entity_tmp_df[, "accel_arm_x"])
+print(all.equal(entity_invProc_df[, feats_df$feature], 
+          entity_tmp_df[, feats_df$feature]))
+
+print(entity_df[entity_df$X == 5373, 
+                    c("gyros_forearm_x", "gyros_forearm_y", "gyros_forearm_z")])
+print(entity_tmp_df[entity_tmp_df$X == 5373, 
+                    c("gyros_forearm_x", "gyros_forearm_y", "gyros_forearm_z")])
+print(entity_invProc_df[entity_invProc_df$X == 5373, 
+                    c("gyros_forearm_x", "gyros_forearm_y", "gyros_forearm_z")])
+
+```
+
+It appears that this observation has some data entry errors. Since it's just 1 observation, let's delete this. If there were more occurences of these errors, we can then consider including the imputed data.
+
+```{r inspect_features_n_minus_1, cache=TRUE}
+print(sprintf("Rows before deletion: %s", format(nrow(entity_df), big.mark=',')))
+entity_df <- entity_df[entity_df$X != 5373, ]
+print(sprintf("Rows after  deletion: %s", format(nrow(entity_df), big.mark=',')))
+```
+
+Now, we need to re-run a whole bunch of stuff.  
+#### Step ``r script_df[script_df$chunk_label == "partition_data", "chunk_step_major"]``: partition data
+```{r partition_data}
+```
+#### Step ``r script_df[script_df$chunk_label == "inspect_features", "chunk_step_major"]``: inspect features
+```{r inspect_features}
+```
+
+```{r inspect_features_n, cache=TRUE}
 script_df <- rbind(script_df, 
                    data.frame(chunk_label="design_models", 
                               chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
