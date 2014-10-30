@@ -80,7 +80,8 @@ Brief summary of the prediciton results on new data:
 
 #### Potential next steps include:
 
-0. Feature distribution checks
+-1. Feature distribution checks
+0. Add piece-wise glm logistic regression
 1. Dummy Classifer
 2. Compress analysis report (please feel free to stop here if you feel that the entire report is too detailed)
 3. Peform PCA pre-processing and select "key" features to make the model more interpretable 
@@ -202,22 +203,68 @@ script_df <- rbind(script_df,
 ```
 
 #### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: partition data
-```{r partition_data}
-#```{r partition_data, cache=TRUE}
-print(table(entity_df[, response_varname], entity_df$user_name))
+```{r partition_data, cache=TRUE}
+#```{r partition_data}
 
-inTrain <- createDataPartition(y=entity_df[, response_varname], p=0.8, list=FALSE)
-train_df <- entity_df[inTrain, c(feats_df$feature, response_varname, id_varnames)]
-test_df <- entity_df[-inTrain, c(feats_df$feature, response_varname, id_varnames)]
+mypartition_data <- function(more_stratify_vars=NULL) {
+    print(" "); print(sprintf("nrow(entity_df): %s", format(nrow(entity_df), big.mark=',')))
+    if (missing(more_stratify_vars)) { 
+        print(table(entity_df[, response_varname])) 
+        keep_cols <- response_varname
+    } else {
+        entity_tbl <- table(entity_df[, response_varname], 
+                            entity_df[, more_stratify_vars])
+        print(entity_tbl)
+        keep_cols <- c(response_varname, more_stratify_vars)
+    }    
+    
+    inTrainValidate <- createDataPartition(y=entity_df[, response_varname], 
+                                           p=0.8, list=FALSE)
+    train_validate_df <- entity_df[inTrainValidate, keep_cols]
+    
+    inTest <- setdiff(seq(1:nrow(entity_df)), inTrainValidate)
+    inTest <- matrix(inTest, nrow=length(inTest), 
+                     dimnames=dimnames(inTrainValidate)) 
+    test_df <- entity_df[inTest, keep_cols]
+    
+    inTrain <- createDataPartition(y=train_validate_df[, response_varname], 
+                                   p=0.8, list=FALSE)
+    train_df <- train_validate_df[inTrain, keep_cols]
+    
+    inValidate <- setdiff(seq(1:nrow(train_validate_df)), inTrain)
+    inValidate <- matrix(inValidate, nrow=length(inValidate), 
+                     dimnames=dimnames(inTrain))     
+    validate_df <- train_validate_df[inValidate, keep_cols]
+    
+    chk_nrow <- nrow(train_df) + nrow(validate_df) + nrow(test_df)
+    if (nrow(entity_df) != chk_nrow)
+        stop("entity_df not partitioned properly; nrow(entity_df): ", 
+             format(nrow(train_df), big.mark=','),
+             " nrow of train+validate+test_df:", 
+             format(chk_nrow, big.mark=','))
+    
+    print(" "); print(sprintf("nrow(train_df): %s", format(nrow(train_df), big.mark=',')))
+    print(suppressWarnings(formatC(table(train_df$classe, 
+        train_df[, more_stratify_vars]) / entity_tbl, digits=3, format='f')))
 
-inValidate <- createDataPartition(y=train_df[, response_varname], p=0.8, list=FALSE)
-train_df <- train_df[inValidate, c(feats_df$feature, response_varname, id_varnames)]
-validate_df <- train_df[-inValidate, c(feats_df$feature, response_varname, id_varnames)]
-print(table(train_df$classe, train_df$user_name))
+    print(" "); print(sprintf("nrow(validate_df): %s", format(nrow(validate_df), big.mark=',')))
+    print(suppressWarnings(formatC(table(validate_df$classe, 
+        validate_df[, more_stratify_vars]) / entity_tbl, digits=3, format='f')))
 
-# Enhance to print %s of entity instead of raw counts
-print(table(validate_df$classe, validate_df$user_name))
-print(table(test_df$classe, test_df$user_name))
+    print(" "); print(sprintf("nrow(test_df): %s", format(nrow(test_df), big.mark=',')))
+    print(suppressWarnings(formatC(table(test_df$classe, 
+        test_df[, more_stratify_vars]) / entity_tbl, digits=3, format='f')))
+    
+    return(list(inTrain=inTrain, inValidate=inValidate, inTest=inTest))
+}
+mypartition_data_lst <- mypartition_data(more_stratify_vars="user_name")
+keep_cols <- c(feats_df$feature, response_varname, id_varnames)
+train_df <- entity_df[mypartition_data_lst$inTrain, keep_cols]
+validate_df <- entity_df[mypartition_data_lst$inValidate, keep_cols]
+test_df <- entity_df[mypartition_data_lst$inTest, keep_cols]
+
+# all.equal(train_save_df, train_df)
+# setdiff(union(names(train_save_df), names(train_df)), intersect(names(train_save_df), names(train_df)))
 
 if (!("inspect_features" %in% script_df$chunk_label))
 script_df <- rbind(script_df, 
@@ -351,11 +398,17 @@ entity_df <- entity_df[entity_df$X != 5373, ]
 print(sprintf("Rows after  deletion: %s", format(nrow(entity_df), big.mark=',')))
 ```
 
-Now, we need to re-run a whole bunch of stuff.  
-#### Step ``r script_df[script_df$chunk_label == "partition_data", "chunk_step_major"]``: partition data
-```{r partition_data}
+Now, we need to re-run a whole bunch of stuff. 
+
+#### Step ``r script_df[script_df$chunk_label == "partition_data", "chunk_step_major"]``: partition data: run 2
+```{r partition_data_run_2, cache=TRUE}
+mypartition_data_lst <- mypartition_data(more_stratify_vars="user_name")
+keep_cols <- c(feats_df$feature, response_varname, id_varnames)
+train_df <- entity_df[mypartition_data_lst$inTrain, keep_cols]
+validate_df <- entity_df[mypartition_data_lst$inValidate, keep_cols]
+test_df <- entity_df[mypartition_data_lst$inTest, keep_cols]
 ```
-#### Step ``r script_df[script_df$chunk_label == "inspect_features", "chunk_step_major"]``: inspect features
+#### Step ``r script_df[script_df$chunk_label == "inspect_features", "chunk_step_major"]``: inspect features: run 2
 ```{r inspect_features}
 ```
 
