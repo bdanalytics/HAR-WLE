@@ -80,7 +80,14 @@ Brief summary of the prediciton results on new data:
 
 #### Potential next steps include:
 
--1. Feature distribution checks
+-7. The rows with calculated aggregate measures (identified by the variable new_window=“yes”) shd be removed
+-6. Plot text labels at 45 degrees
+-5. roll_belt seems to be the key predictor for classe 'A' vs. others
+-4. check decision boundaries for roll_arm vs. roll_forearm
+-3. Feature distribution checks
+-2. Check which new_df features are not in the ranges of entity_df
+-1. Change predict_df to new_df; Swap names between validation & test
+-1. Display one tree of the random forest ?
 0. Add piece-wise glm logistic regression
 1. Dummy Classifer
 2. Compress analysis report (please feel free to stop here if you feel that the entire report is too detailed)
@@ -96,10 +103,12 @@ source("~/Dropbox/datascience/R/myplot.R")
 # Gather all package requirements here
 suppressPackageStartupMessages(require(caret))
 suppressPackageStartupMessages(require(plyr))
+suppressPackageStartupMessages(require(doBy))
 suppressPackageStartupMessages(require(reshape2))
 suppressPackageStartupMessages(require(RColorBrewer))
 
 script_df <- data.frame(chunk_label="import_data", chunk_step_major=1, chunk_step_minor=0)
+print(script_df)
 ```
 
 #### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: import data
@@ -114,6 +123,7 @@ predict_df <- myimport_data(
 script_df <- rbind(script_df, 
                    data.frame(chunk_label="inspect_data", 
                               chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))
+print(script_df)
 ```
 
 #### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: inspect data
@@ -159,13 +169,14 @@ print(myplot_histogram(entity_df, "classe", fill_col_name="user_name"))
 print(myplot_histogram(predict_df, "user_name", show_stats=FALSE))
 
 script_df <- rbind(script_df, 
-                   data.frame(chunk_label="select_features", 
-                              chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
+                   data.frame(chunk_label="inspect_features", 
+                              chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))
+print(script_df)
 ```
 
-#### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: select features
-```{r select_features_1, cache=TRUE}
-#```{r select_features_1}
+#### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: inspect features
+```{r inspect_features_1, cache=TRUE}
+#```{r inspect_features_1}
 features_lst <- names(predict_df)
 
 # Remove features that are not relevant for modeling
@@ -178,12 +189,271 @@ feats_df <- nearZeroVar(entity_df[, features_lst], saveMetrics=TRUE)
 feats_df$feature <- rownames(feats_df)
 # used later for plots
 feats_df$percentUniqueCut_fctr <- cut(feats_df$percentUnique, breaks=5)
-print(subset(feats_df, nzv == TRUE))
+feats_df <- mutate(feats_df, label = ifelse(((nzv) | 
+                                            (freqRatio >=25) | 
+                                            (percentUnique <= 10)), feature, ""))
+
+# Convert these to shiny interactive plots
+print(ggplot(feats_df, aes(x=percentUnique, y=freqRatio)) + 
+          geom_point(aes(color=nzv)) + 
+          geom_text(aes(label=label), color="slategrey", size=3.5))
+
+nearZeroVar_plot_df <- rbind(mutate(entity_df[, c("new_window", response_varname)], 
+                                    source=factor("training", levels=c("training", "newdata"))),
+                             mutate(predict_df[, "new_window", FALSE], 
+                                    source=factor("newdata", levels=c("training", "newdata")),
+                                    classe="OOB"))
+myplot_histogram(nearZeroVar_plot_df, "new_window", 
+                 fill_col_name=response_varname, facet_frmla=reformulate("source"))
+
+```
+
+Since new_window is a categorical variable, let's see if "yes" obs contains data that is different from the others.
+
+#### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: inspect features
+```{r inspect_features_1_1, cache=TRUE}
+
+entity_stats_df <- rbind(cbind(summaryBy(. ~ new_window, 
+                                         data=entity_df[, feats_df$feature], 
+                                         FUN=min, keep.names=TRUE),
+                                data.frame(type="min", stringsAsFactors=FALSE)),
+                         cbind(summaryBy(. ~ new_window, 
+                                         data=entity_df[, feats_df$feature], 
+                                         FUN=max, keep.names=TRUE),
+                                data.frame(type="max", stringsAsFactors=FALSE)))
+print(head(entity_stats_df))
+entity_stats_tmp_df <- entity_stats_df
+entity_stats_df <- melt(entity_stats_tmp_df, id.vars=c("new_window", "type"))
+print(head(entity_stats_df))
+
+entity_stats_tmp_df <- entity_stats_df
+entity_stats_df <- dcast(entity_stats_tmp_df, variable ~ type + new_window)
+entity_stats_df <- mutate(entity_stats_df, 
+    is.range.overlap=ifelse((((max_yes >= max_no) & (min_yes <= min_no)) | 
+                             ((max_yes <= max_no) & (min_yes >= min_no))) 
+                            , FALSE, TRUE))
+print(head(subset(entity_stats_df, is.range.overlap)))
+#myplot_violin(entity_df, entity_stats_df[entity_stats_df$is.range.overlap, "variable"], "new_window")
+
+myplot_violin(entity_df, 
+              toString(entity_stats_df[entity_stats_df$is.range.overlap, "variable"][1]), 
+              "new_window")
+myplot_violin(entity_df, 
+              toString(entity_stats_df[entity_stats_df$is.range.overlap, "variable"][2]), 
+              "new_window")
+myplot_violin(entity_df, 
+              toString(entity_stats_df[entity_stats_df$is.range.overlap, "variable"][3]), 
+              "new_window")
+
+entity_plot_df <- melt(entity_df, id.vars=c("new_window"), 
+                       measure.vars=entity_stats_df[entity_stats_df$is.range.overlap, "variable"])
+print(head(entity_plot_df))
+entity_plot_medians_df <- summaryBy(value ~ variable , entity_plot_df, FUN=c(median), na.rm=TRUE)
+p <- ggplot(entity_plot_df, aes(x=new_window, y=value))
+p <- p + xlab(" ")
+p <- p + geom_violin(fill="grey80", color="blue") + 
+             stat_summary(fun.y=mean, pch=22, geom='point', color='red') +
+             scale_y_continuous(labels=myformat_number)
+p <- p + geom_text(data=entity_plot_medians_df,
+                   mapping=aes_string(x="variable", 
+                                      y="value.median * 1.05",
+                                      label="myformat_number(round(value.median))")
+                   , color="NavyBlue", size=3.5)
+p <- p + facet_wrap(~ variable, scales="free")
+print(p)
+#myplot_violin(df=entity_plot_df, 
+#    ycol_names=entity_stats_df[entity_stats_df$is.range.overlap, "variable"], 
+#   xcol_name="new_window", facet_spec=NULL)
+# mltd_df <- entity_plot_df
+
+
+all.equal(entity_stats_save_df, entity_stats_df)
+
+entity_stats_max_df <- summaryBy(. ~ new_window, data=entity_df[, feats_df$feature], 
+                                 FUN=max, keep.names=TRUE)
+entity_stats_max_df$type <- "max"
+# entity_stats_plot_df <- melt(rbind(entity_stats_min_df, entity_stats_max_df), 
+#                              id.vars=c("new_window", "type"))
+entity_stats_df <- rbind(entity_stats_min_df, entity_stats_max_df) 
+#entity_stats_df <- orderBy(~ type, entity_stats_df)
+print(head(entity_stats_df))
+entity_stats_save_df <- entity_stats_df
+
+# myplot_violin(entity_df, "roll_belt", "new_window")
+# myplot_violin(entity_df, "pitch_belt", "new_window")
+# myplot_violin(entity_df, "yaw_belt", "new_window")
+# myplot_violin(entity_df, "total_accel_belt", "new_window")
+
+myplot_violin(entity_df, "num_window", "new_window")
+
+entity_stats_min_df <- summaryBy(. ~ new_window, data=entity_df[, feats_df$feature], 
+                                 FUN=min, keep.names=TRUE)
+entity_stats_min_df$type <- "min"
+entity_stats_max_df <- summaryBy(. ~ new_window, data=entity_df[, feats_df$feature], 
+                                 FUN=max, keep.names=TRUE)
+entity_stats_max_df$type <- "max"
+# entity_stats_plot_df <- melt(rbind(entity_stats_min_df, entity_stats_max_df), 
+#                              id.vars=c("new_window", "type"))
+entity_stats_df <- rbind(entity_stats_min_df, entity_stats_max_df) 
+entity_stats_df <- orderBy(~ type, entity_stats_df)
+print(head(entity_stats_df))
+
+require(fmsb)
+# -2 for new_window & type
+print(sprintf("Total feats in entity_stats_save_df: %d", ncol(entity_stats_save_df) - 2))    
+feats_tmp_lst <- sort(names(entity_stats_save_df))
+feats_tmp_lst <- feats_tmp_lst[!(feats_tmp_lst %in% c("new_window", "type", "num_window"))]
+print("feats:")
+print(feats_tmp_lst)
+entity_stats_tmp2_df <- subset(entity_stats_save_df, (type == "max")
+#                             , select=c("new_window", "type", 
+#                                     grep(
+#                                         "^(magnet|accel|gyros)_", 
+#                                         #"^magnet_", 
+#                                         #"^magnet_(belt|arm|dumbbell)_", 
+#                                         names(entity_stats_save_df), value=TRUE)
+#                                         )
+                )
+
+op <- par(mar=c(1, 2, 2, 1),mfrow=c(4, 2))
+entity_stats_tmp2_df <- subset(entity_stats_save_df, (type == "max")
+                            , select=c("new_window", "type", 
+                                       feats_tmp_lst[1:12]))
+#print(entity_stats_tmp2_df)
+radarchart(subset(entity_stats_tmp2_df, select=-c(new_window, type)), 
+           axistype=2, maxmin=FALSE, vlcex=0.75, palcex=0.75)
+
+entity_stats_tmp2_df <- subset(entity_stats_save_df, (type == "max")
+                            , select=c("new_window", "type", 
+                                       feats_tmp_lst[13:24]))
+radarchart(subset(entity_stats_tmp2_df, select=-c(new_window, type)), 
+           axistype=2, maxmin=FALSE, vlcex=0.75, palcex=0.75)
+
+entity_stats_tmp2_df <- subset(entity_stats_save_df, (type == "max")
+                            , select=c("new_window", "type", 
+                                       feats_tmp_lst[25:36]))
+radarchart(subset(entity_stats_tmp2_df, select=-c(new_window, type)), 
+           axistype=2, maxmin=FALSE, vlcex=0.75, palcex=0.75)
+
+entity_stats_tmp2_df <- subset(entity_stats_save_df, (type == "max")
+                            , select=c("new_window", "type", 
+                                       feats_tmp_lst[37:40]))
+radarchart(subset(entity_stats_tmp2_df, select=-c(new_window, type)), 
+           axistype=2, maxmin=FALSE, vlcex=0.75, palcex=0.75)
+
+entity_stats_tmp2_df <- subset(entity_stats_save_df, (type == "max")
+                            , select=c("new_window", "type", 
+                                       feats_tmp_lst[41:44]))
+radarchart(subset(entity_stats_tmp2_df, select=-c(new_window, type)), 
+           axistype=2, maxmin=FALSE, vlcex=0.75, palcex=0.75)
+
+entity_stats_tmp2_df <- subset(entity_stats_save_df, (type == "max")
+                            , select=c("new_window", "type", 
+                                       feats_tmp_lst[45:48]))
+radarchart(subset(entity_stats_tmp2_df, select=-c(new_window, type)), 
+           axistype=2, maxmin=FALSE, vlcex=0.75, palcex=0.75)
+
+entity_stats_tmp2_df <- subset(entity_stats_save_df, (type == "max")
+                            , select=c("new_window", "type", 
+                                       feats_tmp_lst[49:52]))
+radarchart(subset(entity_stats_tmp2_df, select=-c(new_window, type)), 
+           axistype=2, maxmin=FALSE, vlcex=0.75, palcex=0.75)
+
+###################################
+##Radar Plot Code
+##########################################
+##Assumes d is in the form:
+# seg  meanAcc sdAcc   meanAccz sdAccz meanSpd   sdSpd   cluster
+# 388  -0.038   1.438   -0.571  0.832  -0.825   0.095       1
+##where seg is the individual instance identifier -> changed to new_window
+##cluster is the cluster membership -> changed to type
+##and the variables from meanACC to sdSpd are used for the clustering
+##and thus should be individual lines on the radar plot
+radarFix = function(d){
+  ##assuming the passed in data frame 
+  ##includes only variables you would like plotted and segment label
+  d$new_window=as.factor(d$new_window)
+  ##find increment
+  angles = seq(from=0, to=2*pi, by=(2*pi)/(ncol(d)-2))
+  ##create graph data frame
+  graphData= data.frame(new_window="", x=0,y=0)
+  graphData=graphData[-1,]
+
+  for(i in levels(d$new_window)){
+    new_windowData= subset(d, new_window==i)
+    for(j in c(2:(ncol(d)-1))){
+      ##set minimum value such that it occurs at 0. (center the data at -3 sd)
+      new_windowData[,j]= new_windowData[,j]+3
+
+      graphData=rbind(graphData, data.frame(new_window=i, 
+                                            x=new_windowData[,j]*cos(angles[j-1]),
+                                            y=new_windowData[,j]*sin(angles[j-1])))
+    }
+    ##completes the connection
+    graphData=rbind(graphData, data.frame(new_window=i, 
+                                          x=new_windowData[,2]*cos(angles[1]),
+                                          y=new_windowData[,2]*sin(angles[1])))
+
+  }
+  graphData
+
+}
+radarData = ddply(entity_stats_df[, c("new_window", "type", 
+                                      "roll_belt", "pitch_belt", "yaw_belt", "total_accel_belt")], .(type), radarFix)
+ggplot(radarData, aes(x=x, y=y, group=new_window))+
+  geom_path(alpha=0.5,colour="black")+
+  geom_point(alpha=0.2, colour="blue")+
+  facet_wrap(~type)
+#### stackoverflow code ends here
+
+print(ggplot(entity_stats_plot_df[entity_stats_plot_df$variable %in% feats_df$feature[3:4], ], aes(x=variable, y=value)) + 
+                 geom_point(aes(color=new_window, shape=type)))
+
+accel_feats <- grep("accel", feats_df$feature, value=TRUE)
+print(head(entity_df[entity_df$new_window == "yes", c("num_window", "new_window", accel_feats)]))
+print(head(entity_df[entity_df$new_window == "no", c("num_window", "new_window", accel_feats)]))
+
+
+
+entity_stats_df <- summaryBy(. ~ new_window, data=entity_df[, feats_df$feature], 
+                             FUN=c(min, max))
+entity_stats_plot_df <- melt(entity_stats_df, id.vars="new_window")
+entity_stats_plot_df$variable <- strsplit(toString(entity_stats_plot_df$variable), ',')[[1]]
+entity_stats_plot_df$feature <- sapply(entity_stats_plot_df$variable, 
+                                       function(variable) 
+                                           strsplit(variable, ".", fixed=TRUE)[[1]][1])
+entity_stats_plot_df$type    <- sapply(entity_stats_plot_df$variable, 
+                                       function(variable) 
+                                           strsplit(variable, ".", fixed=TRUE)[[1]][2])
+
+entity_stats_dcast_df <- dcast(entity_stats_plot_df, feature ~ type, mean)
+print(ggplot(entity_stats_plot_df, aes(x=)))
+
 nearZeroVars <- subset(feats_df, nzv == TRUE)$feature
-print(summary(entity_df[, nearZeroVars]))
-print(summary(predict_df[, nearZeroVars]))
+#print(summary(entity_df[, nearZeroVars]))
+#print(summary(predict_df[, nearZeroVars]))
 
 feats_df <- subset(feats_df, nzv == FALSE)
+
+# freqRatio higher than nearZeroVar
+hi_freqRatio_plot_df <- melt(entity_df[, c(response_varname, 
+                                           "pitch_arm", "pitch_forearm", "roll_arm")], 
+                             id.vars=response_varname)
+myplot_histogram(hi_freqRatio_plot_df, "value", fill_col_name=response_varname,
+                 facet_frmla=reformulate("variable"))
+
+# percentUnique lower than nearZeroVar (least values filter)
+# print(ggplot(feats_df, aes(x=percentUnique, y=freqRatio)) + 
+#           geom_point(aes(color=nzv)) + xlim(-2, 10) + ylim(0.95, 1.15) + 
+#           geom_text(aes(label=label), color="slategrey", size=3.5))
+
+print(subset(feats_df, percentUnique <= 0.4))
+lo_percentUnique_plot_df <- melt(entity_df[, c(response_varname, 
+                                           "total_accel_belt", "total_accel_dumbbell")], 
+                             id.vars=response_varname)
+myplot_histogram(lo_percentUnique_plot_df, "value", fill_col_name=response_varname,
+                 facet_frmla=reformulate("variable"))
+
 ```
 
 Let's add a random variable (my.rnorm) as a feature since some models (e.g. random forests) like a random variable & any model that categorizes this feature as significant would be suspect.
@@ -193,120 +463,6 @@ random_varname <- "my.rnorm"
 predict_df$my.rnorm <- rnorm(nrow(predict_df))
 entity_df$my.rnorm <- rnorm(nrow(entity_df))
 feats_df[nrow(feats_df) + 1, "feature"] <- random_varname
-
-# Since some steps might need to be re-run:
-feats_save_df <- feats_df
-
-script_df <- rbind(script_df, 
-                   data.frame(chunk_label="partition_data", 
-                              chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
-```
-
-#### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: partition data
-```{r partition_data, cache=TRUE}
-#```{r partition_data}
-
-mypartition_data <- function(more_stratify_vars=NULL) {
-    print(" "); print(sprintf("nrow(entity_df): %s", format(nrow(entity_df), big.mark=',')))
-    if (missing(more_stratify_vars)) { 
-        print(table(entity_df[, response_varname])) 
-        keep_cols <- response_varname
-    } else {
-        entity_tbl <- table(entity_df[, response_varname], 
-                            entity_df[, more_stratify_vars])
-        print(entity_tbl)
-        keep_cols <- c(response_varname, more_stratify_vars)
-    }    
-    
-    inTrainValidate <- createDataPartition(y=entity_df[, response_varname], 
-                                           p=0.8, list=FALSE)
-    train_validate_df <- entity_df[inTrainValidate, keep_cols]
-    
-    inTest <- setdiff(seq(1:nrow(entity_df)), inTrainValidate)
-    inTest <- matrix(inTest, nrow=length(inTest), 
-                     dimnames=dimnames(inTrainValidate)) 
-    test_df <- entity_df[inTest, keep_cols]
-    
-    inTrain <- createDataPartition(y=train_validate_df[, response_varname], 
-                                   p=0.8, list=FALSE)
-    train_df <- train_validate_df[inTrain, keep_cols]
-    
-    inValidate <- setdiff(seq(1:nrow(train_validate_df)), inTrain)
-    inValidate <- matrix(inValidate, nrow=length(inValidate), 
-                     dimnames=dimnames(inTrain))     
-    validate_df <- train_validate_df[inValidate, keep_cols]
-    
-    chk_nrow <- nrow(train_df) + nrow(validate_df) + nrow(test_df)
-    if (nrow(entity_df) != chk_nrow)
-        stop("entity_df not partitioned properly; nrow(entity_df): ", 
-             format(nrow(train_df), big.mark=','),
-             " nrow of train+validate+test_df:", 
-             format(chk_nrow, big.mark=','))
-    
-    print(" "); print(sprintf("nrow(train_df): %s", format(nrow(train_df), big.mark=',')))
-    print(suppressWarnings(formatC(table(train_df$classe, 
-        train_df[, more_stratify_vars]) / entity_tbl, digits=3, format='f')))
-
-    print(" "); print(sprintf("nrow(validate_df): %s", format(nrow(validate_df), big.mark=',')))
-    print(suppressWarnings(formatC(table(validate_df$classe, 
-        validate_df[, more_stratify_vars]) / entity_tbl, digits=3, format='f')))
-
-    print(" "); print(sprintf("nrow(test_df): %s", format(nrow(test_df), big.mark=',')))
-    print(suppressWarnings(formatC(table(test_df$classe, 
-        test_df[, more_stratify_vars]) / entity_tbl, digits=3, format='f')))
-    
-    return(list(inTrain=inTrain, inValidate=inValidate, inTest=inTest))
-}
-mypartition_data_lst <- mypartition_data(more_stratify_vars="user_name")
-keep_cols <- c(feats_df$feature, response_varname, id_varnames)
-train_df <- entity_df[mypartition_data_lst$inTrain, keep_cols]
-validate_df <- entity_df[mypartition_data_lst$inValidate, keep_cols]
-test_df <- entity_df[mypartition_data_lst$inTest, keep_cols]
-
-# all.equal(train_save_df, train_df)
-# setdiff(union(names(train_save_df), names(train_df)), intersect(names(train_save_df), names(train_df)))
-
-if (!("inspect_features" %in% script_df$chunk_label))
-script_df <- rbind(script_df, 
-                   data.frame(chunk_label="inspect_features", 
-                              chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
-```
-
-#### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: inspect features
-```{r inspect_features}
-# Compute feature correlations with response to prioritize feature selection for model design
-feats_cor_df <- data.frame( response.cor=cor(train_df[, feats_df$feature], 
-                            unclass(train_df[, response_varname])))
-feats_cor_df$response.cor.abs <- abs(feats_cor_df$response.cor)
-feats_cor_df$feature <- rownames(feats_cor_df)
-feats_cor_df <- orderBy(~ -response.cor.abs, data=feats_cor_df)
-
-#intersect(names(feats_df), names(feats_cor_df))
-feats_df <- feats_save_df
-feats_tmp_df <- merge(feats_df, feats_cor_df)
-feats_tmp_df <- orderBy(~ -response.cor.abs, data=feats_tmp_df)
-#print(head(feats_tmp_df))
-#print(head(feats_cor_df))
-
-feats_all_df <- feats_tmp_df
-
-# Extract features that have higher correlation than the random variable that was inducted ('my.rnorm')
-feats_df <- subset(feats_all_df, 
-    response.cor.abs >= feats_all_df[which(feats_all_df$feature == random_varname),
-                                    "response.cor.abs"])
-feats_df <- orderBy(~ - response.cor.abs, feats_df)
-myprint_df(feats_df)
-
-# Plot subset of points since all points just creates a "waterfall" of the last color in the scale
-train_plot_df <- melt(train_df[createDataPartition(y=train_df[, response_varname], p=0.1, list=FALSE),
-                                c(response_varname, "user_name", feats_df$feature[1:4])],
-                    measure.vars=c(feats_df$feature[2:4]))
-#print(table(train_plot_df[, response_varname]))
-print(ggplot(train_plot_df, aes_string(x=feats_df[1, "feature"], 
-                                        y="value",
-                                  color=response_varname)) + 
-          geom_point(position="jitter") + scale_color_brewer(type="qual", palette="Set1") + 
-          facet_wrap(~ variable, scales="free_y"))
 
 # check feature distribution type
 feats_df <- orderBy(~ - response.cor.abs, feats_df)
@@ -339,8 +495,90 @@ print(ggplot(entity_plot_df, aes(x=factor(0), y=value)) +
           geom_text(aes(label=X_label), color="slategrey", size=3) + 
           facet_wrap(~ variable, scales="free_y") + xlab(""))
 
+
+
+# Since some steps might need to be re-run:
+feats_save_df <- feats_df
+
+if (!("inspect_features" %in% script_df$chunk_label))
+script_df <- rbind(script_df, 
+                   data.frame(chunk_label="inspect_features", 
+                              chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))
+print(script_df)
+```
+#### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: inspect features
+```{r inspect_features}
+# Compute feature correlations with response to prioritize feature selection for model design
+mycompute_correlations <- function(feats_df, data_df, tgt_colname, min.cor_colname) {
+    cor_varname <- paste0(tgt_colname, ".cor")
+    cor_abs_varname <- paste0(cor_varname, ".abs")
+    
+    feats_cor_df <- data.frame(cor=cor(data_df[, feats_df$feature], 
+                                       unclass(data_df[, tgt_colname])))
+    names(feats_cor_df) <- cor_varname
+    feats_cor_df[, cor_abs_varname] <- abs(feats_cor_df[, cor_varname])
+    feats_cor_df$feature <- rownames(feats_cor_df)
+    
+    #intersect(names(feats_df), names(feats_cor_df))
+    feats_tmp_df <- merge(feats_df, feats_cor_df)
+    feats_ret_df <- feats_tmp_df[order(feats_tmp_df[, cor_abs_varname], decreasing=TRUE), ]
+
+    #feats_all_df$freqRatioCut_fctr <- cut(feats_all_df$freqRatio, 5)
+    print(ggplot(feats_ret_df, aes_string(x="percentUnique", y=cor_varname)) + 
+            geom_point() + 
+            geom_text(aes_string(label="feature", color="freqRatio", size=cor_abs_varname)))
+
+    drop_feats <- feats_ret_df$feature[which(feats_ret_df[, cor_abs_varname] < 
+                        feats_ret_df[feats_ret_df$feature == min.cor_colname, cor_abs_varname])]
+    if (length(drop_feats) > 0) {
+        print(sprintf("Dropping features based on %s correlation: %s", 
+                      min.cor_colname, drop_feats))
+        feats_ret_df <- feats_ret_df[!(feats_ret_df$feature %in% drop_feats),]
+    }
+        
+    return(feats_ret_df)
+}
+feats_df <- mycompute_correlations(feats_df, data_df=train_df, 
+                tgt_colname=response_varname, min.cor_colname=random_varname)
+
+# Select features that have higher correlation than the random variable that was inducted ('my.rnorm')
+feats_df <- subset(feats_all_df, 
+    response.cor.abs >= feats_all_df[which(feats_all_df$feature == random_varname),
+                                    "response.cor.abs"])
+feats_df <- orderBy(~ - response.cor.abs, feats_df)
+myprint_df(feats_df)
+
+# Plot subset of points since all points just creates a "waterfall" of the last color in the scale
+train_plot_df <- melt(train_df[createDataPartition(y=train_df[, response_varname], p=0.1, list=FALSE),
+                                c(response_varname, "user_name", feats_df$feature[1:4])],
+                    measure.vars=c(feats_df$feature[2:4]))
+#print(table(train_plot_df[, response_varname]))
+print(ggplot(train_plot_df, aes_string(x=feats_df[1, "feature"], 
+                                        y="value",
+                                  color=response_varname)) + 
+          geom_point(position="jitter") + scale_color_brewer(type="qual", palette="Set1") + 
+          facet_wrap(~ variable, scales="free_y"))
+
 myprint_df(feats_df)
 ```
+
+script_df <- rbind(script_df, 
+                   data.frame(chunk_label="partition_data", 
+                              chunk_step_major=max(script_df$chunk_step_major)+1, chunk_step_minor=0))                              
+```
+
+#### Step ``r script_df[nrow(script_df), "chunk_step_major"]``: partition data
+```{r partition_data, cache=TRUE}
+#```{r partition_data}
+
+mypartition_data_lst <- mypartition_data(more_stratify_vars="user_name")
+keep_cols <- c(feats_df$feature, response_varname, id_varnames)
+train_df <- entity_df[mypartition_data_lst$inTrain, keep_cols]
+validate_df <- entity_df[mypartition_data_lst$inValidate, keep_cols]
+test_df <- entity_df[mypartition_data_lst$inTest, keep_cols]
+
+```
+
 
 ```{r inspect_features_1, cache=TRUE}
 print("Suspect data:")
